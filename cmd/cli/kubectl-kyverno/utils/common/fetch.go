@@ -20,6 +20,7 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/kubernetes/scheme"
+	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/yaml"
 )
 
@@ -87,7 +88,7 @@ func whenClusterIsTrue(resourceTypes []schema.GroupVersionKind, subresourceMap m
 			}
 			if lenOfResource >= len(resources) {
 				if policyReport {
-					log.V(3).Info(fmt.Sprintf("%s not found in cluster", resourcePath))
+					log.Log.V(3).Info(fmt.Sprintf("%s not found in cluster", resourcePath))
 				} else {
 					fmt.Printf("\n----------------------------------------------------------------------\nresource %s not found in cluster\n----------------------------------------------------------------------\n", resourcePath)
 				}
@@ -104,7 +105,7 @@ func whenClusterIsFalse(resourcePaths []string, policyReport bool) ([]*unstructu
 		resourceBytes, err := getFileBytes(resourcePath)
 		if err != nil {
 			if policyReport {
-				log.V(3).Info(fmt.Sprintf("failed to load resources: %s.", resourcePath), "error", err)
+				log.Log.V(3).Info(fmt.Sprintf("failed to load resources: %s.", resourcePath), "error", err)
 			} else {
 				fmt.Printf("\n----------------------------------------------------------------------\nfailed to load resources: %s. \nerror: %s\n----------------------------------------------------------------------\n", resourcePath, err)
 			}
@@ -176,7 +177,7 @@ func GetResource(resourceBytes []byte) ([]*unstructured.Unstructured, error) {
 		resource, err := convertResourceToUnstructured(resourceYaml)
 		if err != nil {
 			if strings.Contains(err.Error(), "Object 'Kind' is missing") {
-				log.V(3).Info("skipping resource as kind not found")
+				log.Log.V(3).Info("skipping resource as kind not found")
 				continue
 			}
 			getErrString = getErrString + err.Error() + "\n"
@@ -344,7 +345,7 @@ func addGVKToResourceTypesMap(kind string, resourceTypesMap map[schema.GroupVers
 	group, version, kind, subresource := kubeutils.ParseKindSelector(kind)
 	gvrss, err := client.Discovery().FindResources(group, version, kind, subresource)
 	if err != nil {
-		log.Info("failed to find resource", "kind", kind, "error", err)
+		log.Log.Info("failed to find resource", "kind", kind, "error", err)
 		return
 	}
 	for parent, child := range gvrss {

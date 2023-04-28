@@ -3,7 +3,7 @@ package json
 import (
 	"encoding/json"
 
-	jsonpatch "github.com/evanphx/json-patch/v5"
+	jsonpatch "github.com/evanphx/json-patch"
 )
 
 type PatchOperation struct {

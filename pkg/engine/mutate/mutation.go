@@ -6,9 +6,9 @@ import (
 
 	"github.com/go-logr/logr"
 	kyvernov1 "github.com/kyverno/kyverno/api/kyverno/v1"
-	engineapi "github.com/kyverno/kyverno/pkg/engine/api"
 	"github.com/kyverno/kyverno/pkg/engine/context"
 	"github.com/kyverno/kyverno/pkg/engine/mutate/patch"
+	"github.com/kyverno/kyverno/pkg/engine/response"
 	"github.com/kyverno/kyverno/pkg/engine/variables"
 	datautils "github.com/kyverno/kyverno/pkg/utils/data"
 	"k8s.io/apiextensions-apiserver/pkg/apis/apiextensions"
@@ -16,17 +16,17 @@ import (
 )
 
 type Response struct {
-	Status          engineapi.RuleStatus
+	Status          response.RuleStatus
 	PatchedResource unstructured.Unstructured
 	Patches         [][]byte
 	Message         string
 }
 
 func NewErrorResponse(msg string, err error) *Response {
-	return NewResponse(engineapi.RuleStatusError, unstructured.Unstructured{}, nil, fmt.Sprintf("%s: %v", msg, err))
+	return NewResponse(response.RuleStatusError, unstructured.Unstructured{}, nil, fmt.Sprintf("%s: %v", msg, err))
 }
 
-func NewResponse(status engineapi.RuleStatus, resource unstructured.Unstructured, patches [][]byte, msg string) *Response {
+func NewResponse(status response.RuleStatus, resource unstructured.Unstructured, patches [][]byte, msg string) *Response {
 	return &Response{
 		Status:          status,
 		PatchedResource: resource,
@@ -42,18 +42,18 @@ func Mutate(rule *kyvernov1.Rule, ctx context.Interface, resource unstructured.U
 	}
 
 	m := updatedRule.Mutation
-	patcher := NewPatcher(updatedRule.Name, m.GetPatchStrategicMerge(), m.PatchesJSON6902, resource, logger)
+	patcher := NewPatcher(updatedRule.Name, m.GetPatchStrategicMerge(), m.PatchesJSON6902, resource, ctx, logger)
 	if patcher == nil {
-		return NewResponse(engineapi.RuleStatusError, resource, nil, "empty mutate rule")
+		return NewResponse(response.RuleStatusError, resource, nil, "empty mutate rule")
 	}
 
 	resp, patchedResource := patcher.Patch()
-	if resp.Status != engineapi.RuleStatusPass {
+	if resp.Status != response.RuleStatusPass {
 		return NewResponse(resp.Status, resource, nil, resp.Message)
 	}
 
 	if resp.Patches == nil {
-		return NewResponse(engineapi.RuleStatusSkip, resource, nil, "no patches applied")
+		return NewResponse(response.RuleStatusSkip, resource, nil, "no patches applied")
 	}
 
 	if rule.IsMutateExisting() {
@@ -66,35 +66,34 @@ func Mutate(rule *kyvernov1.Rule, ctx context.Interface, resource unstructured.U
 		}
 	}
 
-	return NewResponse(engineapi.RuleStatusPass, patchedResource, resp.Patches, resp.Message)
+	return NewResponse(response.RuleStatusPass, patchedResource, resp.Patches, resp.Message)
 }
 
-func ForEach(name string, foreach kyvernov1.ForEachMutation, policyContext engineapi.PolicyContext, resource unstructured.Unstructured, element interface{}, logger logr.Logger) *Response {
-	ctx := policyContext.JSONContext()
+func ForEach(name string, foreach kyvernov1.ForEachMutation, ctx context.Interface, resource unstructured.Unstructured, logger logr.Logger) *Response {
 	fe, err := substituteAllInForEach(foreach, ctx, logger)
 	if err != nil {
 		return NewErrorResponse("variable substitution failed", err)
 	}
 
-	patcher := NewPatcher(name, fe.GetPatchStrategicMerge(), fe.PatchesJSON6902, resource, logger)
+	patcher := NewPatcher(name, fe.GetPatchStrategicMerge(), fe.PatchesJSON6902, resource, ctx, logger)
 	if patcher == nil {
-		return NewResponse(engineapi.RuleStatusError, unstructured.Unstructured{}, nil, "no patches found")
+		return NewResponse(response.RuleStatusError, unstructured.Unstructured{}, nil, "no patches found")
 	}
 
 	resp, patchedResource := patcher.Patch()
-	if resp.Status != engineapi.RuleStatusPass {
+	if resp.Status != response.RuleStatusPass {
 		return NewResponse(resp.Status, unstructured.Unstructured{}, nil, resp.Message)
 	}
 
 	if resp.Patches == nil {
-		return NewResponse(engineapi.RuleStatusSkip, unstructured.Unstructured{}, nil, "no patches applied")
+		return NewResponse(response.RuleStatusSkip, unstructured.Unstructured{}, nil, "no patches applied")
 	}
 
 	if err := ctx.AddResource(patchedResource.Object); err != nil {
 		return NewErrorResponse("failed to update patched resource in the JSON context", err)
 	}
 
-	return NewResponse(engineapi.RuleStatusPass, patchedResource, resp.Patches, resp.Message)
+	return NewResponse(response.RuleStatusPass, patchedResource, resp.Patches, resp.Message)
 }
 
 func substituteAllInForEach(fe kyvernov1.ForEachMutation, ctx context.Interface, logger logr.Logger) (*kyvernov1.ForEachMutation, error) {
@@ -121,9 +120,9 @@ func substituteAllInForEach(fe kyvernov1.ForEachMutation, ctx context.Interface,
 	return &updatedForEach, nil
 }
 
-func NewPatcher(name string, strategicMergePatch apiextensions.JSON, jsonPatch string, r unstructured.Unstructured, logger logr.Logger) patch.Patcher {
+func NewPatcher(name string, strategicMergePatch apiextensions.JSON, jsonPatch string, r unstructured.Unstructured, ctx context.Interface, logger logr.Logger) patch.Patcher {
 	if strategicMergePatch != nil {
-		return patch.NewPatchStrategicMerge(name, strategicMergePatch, r, logger)
+		return patch.NewPatchStrategicMerge(name, strategicMergePatch, r, ctx, logger)
 	}
 
 	if len(jsonPatch) > 0 {

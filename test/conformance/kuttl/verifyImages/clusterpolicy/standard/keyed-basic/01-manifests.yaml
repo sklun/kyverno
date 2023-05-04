@@ -8,7 +8,7 @@ kind: ClusterPolicy
 metadata:
   name: keyed-basic-policy
 spec:
-  validationFailureAction: Enforce
+  validationFailureAction: enforce
   background: false
   webhookTimeoutSeconds: 30
   failurePolicy: Fail

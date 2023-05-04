@@ -16,7 +16,7 @@ kind: ClusterPolicy
 metadata:
   name: validate-labels
 spec:
-  validationFailureAction: Audit
+  validationFailureAction: audit
   background: true
   rules:
     - name: validate-labels

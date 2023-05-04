@@ -33,25 +33,28 @@ func (inner AdmissionHandler) withAdmission(logger logr.Logger) HttpHandler {
 			HttpError(request.Context(), writer, request, logger, errors.New("invalid Content-Type"), http.StatusUnsupportedMediaType)
 			return
 		}
-		var admissionReview admissionv1.AdmissionReview
+		admissionReview := &admissionv1.AdmissionReview{}
 		if err := json.Unmarshal(body, &admissionReview); err != nil {
 			HttpError(request.Context(), writer, request, logger, err, http.StatusExpectationFailed)
 			return
 		}
 		logger := logger.WithValues(
+			"kind", admissionReview.Request.Kind.Kind,
 			"gvk", admissionReview.Request.Kind,
-			"gvr", admissionReview.Request.Resource,
 			"namespace", admissionReview.Request.Namespace,
 			"name", admissionReview.Request.Name,
 			"operation", admissionReview.Request.Operation,
 			"uid", admissionReview.Request.UID,
 			"user", admissionReview.Request.UserInfo,
 		)
-		admissionRequest := AdmissionRequest{
-			AdmissionRequest: *admissionReview.Request,
+		admissionReview.Response = &admissionv1.AdmissionResponse{
+			Allowed: true,
+			UID:     admissionReview.Request.UID,
 		}
-		admissionResponse := inner(request.Context(), logger, admissionRequest, startTime)
-		admissionReview.Response = &admissionResponse
+		admissionResponse := inner(request.Context(), logger, admissionReview.Request, startTime)
+		if admissionResponse != nil {
+			admissionReview.Response = admissionResponse
+		}
 		responseJSON, err := json.Marshal(admissionReview)
 		if err != nil {
 			HttpError(request.Context(), writer, request, logger, err, http.StatusInternalServerError)

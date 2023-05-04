@@ -1,8 +1,0 @@
-// See https://containers.dev/implementors/json_reference/ for configuration reference
-{
-	"name": "Kyverno",
-	"build": {
-		"dockerfile": "Dockerfile"
-	},
-  "remoteUser": "root"
-}

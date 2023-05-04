@@ -13,31 +13,16 @@ type WebhookConfig struct {
 	ObjectSelector    *metav1.LabelSelector `json:"objectSelector,omitempty"`
 }
 
-func parseWebhooks(in string) ([]WebhookConfig, error) {
+func parseWebhooks(webhooks string) ([]WebhookConfig, error) {
 	webhookCfgs := make([]WebhookConfig, 0, 10)
-	if err := json.Unmarshal([]byte(in), &webhookCfgs); err != nil {
+	if err := json.Unmarshal([]byte(webhooks), &webhookCfgs); err != nil {
 		return nil, err
 	}
 	return webhookCfgs, nil
 }
 
-func parseStrings(in string) []string {
-	var out []string
-	for _, in := range strings.Split(in, ",") {
-		in := strings.TrimSpace(in)
-		if in != "" {
-			out = append(out, in)
-		}
-	}
-	return out
-}
-
-func parseWebhookAnnotations(in string) (map[string]string, error) {
-	var out map[string]string
-	if err := json.Unmarshal([]byte(in), &out); err != nil {
-		return nil, err
-	}
-	return out, nil
+func parseRbac(list string) []string {
+	return strings.Split(list, ",")
 }
 
 type namespacesConfig struct {
@@ -45,9 +30,9 @@ type namespacesConfig struct {
 	ExcludeNamespaces []string `json:"exclude,omitempty"`
 }
 
-func parseIncludeExcludeNamespacesFromNamespacesConfig(in string) (namespacesConfig, error) {
+func parseIncludeExcludeNamespacesFromNamespacesConfig(jsonStr string) (namespacesConfig, error) {
 	var namespacesConfigObject namespacesConfig
-	err := json.Unmarshal([]byte(in), &namespacesConfigObject)
+	err := json.Unmarshal([]byte(jsonStr), &namespacesConfigObject)
 	return namespacesConfigObject, err
 }
 
@@ -59,11 +44,11 @@ type filter struct {
 
 // ParseKinds parses the kinds if a single string contains comma separated kinds
 // {"1,2,3","4","5"} => {"1","2","3","4","5"}
-func parseKinds(in string) []filter {
+func parseKinds(list string) []filter {
 	resources := []filter{}
 	var resource filter
 	re := regexp.MustCompile(`\[([^\[\]]*)\]`)
-	submatchall := re.FindAllString(in, -1)
+	submatchall := re.FindAllString(list, -1)
 	for _, element := range submatchall {
 		element = strings.Trim(element, "[")
 		element = strings.Trim(element, "]")

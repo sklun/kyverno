@@ -10,6 +10,7 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric/global"
 	"go.opentelemetry.io/otel/metric/instrument"
+	"go.opentelemetry.io/otel/metric/instrument/syncint64"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -21,26 +22,26 @@ type reconcileFunc func(ctx context.Context, logger logr.Logger, key string, nam
 
 type controllerMetrics struct {
 	controllerName string
-	reconcileTotal instrument.Int64Counter
-	requeueTotal   instrument.Int64Counter
-	queueDropTotal instrument.Int64Counter
+	reconcileTotal syncint64.Counter
+	requeueTotal   syncint64.Counter
+	queueDropTotal syncint64.Counter
 }
 
 func newControllerMetrics(logger logr.Logger, controllerName string) *controllerMetrics {
 	meter := global.MeterProvider().Meter(metrics.MeterName)
-	reconcileTotal, err := meter.Int64Counter(
+	reconcileTotal, err := meter.SyncInt64().Counter(
 		"kyverno_controller_reconcile",
 		instrument.WithDescription("can be used to track number of reconciliation cycles"))
 	if err != nil {
 		logger.Error(err, "Failed to create instrument, kyverno_controller_reconcile_total")
 	}
-	requeueTotal, err := meter.Int64Counter(
+	requeueTotal, err := meter.SyncInt64().Counter(
 		"kyverno_controller_requeue",
 		instrument.WithDescription("can be used to track number of reconciliation errors"))
 	if err != nil {
 		logger.Error(err, "Failed to create instrument, kyverno_controller_requeue_total")
 	}
-	queueDropTotal, err := meter.Int64Counter(
+	queueDropTotal, err := meter.SyncInt64().Counter(
 		"kyverno_controller_drop",
 		instrument.WithDescription("can be used to track number of queue drops"))
 	if err != nil {
@@ -56,10 +57,9 @@ func newControllerMetrics(logger logr.Logger, controllerName string) *controller
 
 func Run(ctx context.Context, logger logr.Logger, controllerName string, period time.Duration, queue workqueue.RateLimitingInterface, n, maxRetries int, r reconcileFunc, routines ...func(context.Context, logr.Logger)) {
 	logger.Info("starting ...")
+	defer runtime.HandleCrash()
 	defer logger.Info("stopped")
 	var wg sync.WaitGroup
-	defer wg.Wait()
-	defer runtime.HandleCrash()
 	metric := newControllerMetrics(logger, controllerName)
 	func() {
 		ctx, cancel := context.WithCancel(ctx)
@@ -69,8 +69,8 @@ func Run(ctx context.Context, logger logr.Logger, controllerName string, period 
 			wg.Add(1)
 			go func(logger logr.Logger) {
 				logger.Info("starting worker")
-				defer logger.Info("worker stopped")
 				defer wg.Done()
+				defer logger.Info("worker stopped")
 				wait.UntilWithContext(ctx, func(ctx context.Context) { worker(ctx, logger, metric, queue, maxRetries, r) }, period)
 			}(logger.WithName("worker").WithValues("id", i))
 		}
@@ -78,14 +78,15 @@ func Run(ctx context.Context, logger logr.Logger, controllerName string, period 
 			wg.Add(1)
 			go func(logger logr.Logger, routine func(context.Context, logr.Logger)) {
 				logger.Info("starting routine")
-				defer logger.Info("routine stopped")
 				defer wg.Done()
+				defer logger.Info("routine stopped")
 				routine(ctx, logger)
 			}(logger.WithName("routine").WithValues("id", i), routine)
 		}
 		<-ctx.Done()
 	}()
 	logger.Info("waiting for workers to terminate ...")
+	wg.Wait()
 }
 
 func worker(ctx context.Context, logger logr.Logger, metric *controllerMetrics, queue workqueue.RateLimitingInterface, maxRetries int, r reconcileFunc) {

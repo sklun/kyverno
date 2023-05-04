@@ -5,25 +5,10 @@ import (
 	"k8s.io/apimachinery/pkg/util/validation/field"
 )
 
-// ImageVerificationType selects the type of verification algorithm
-// +kubebuilder:validation:Enum=Cosign;NotaryV2
-// +kubebuilder:default=Cosign
-type ImageVerificationType string
-
-const (
-	Cosign   ImageVerificationType = "Cosign"
-	NotaryV2 ImageVerificationType = "NotaryV2"
-)
-
 // ImageVerification validates that images that match the specified pattern
 // are signed with the supplied public key. Once the image is verified it is
 // mutated to include the SHA digest retrieved during the registration.
 type ImageVerification struct {
-	// Type specifies the method of signature validation. The allowed options
-	// are Cosign and NotaryV2. By default Cosign is used if a type is not specified.
-	// +kubebuilder:validation:Optional
-	Type ImageVerificationType `json:"type,omitempty" yaml:"type,omitempty"`
-
 	// ImageReferences is a list of matching image reference patterns. At least one pattern in the
 	// list must match the image for the rule to apply. Each image reference consists of a registry
 	// address (defaults to docker.io), repository, image, and tag (defaults to latest).
@@ -63,12 +48,8 @@ type ImageVerification struct {
 }
 
 // Validate implements programmatic validation
-func (iv *ImageVerification) Validate(isAuditFailureAction bool, path *field.Path) (errs field.ErrorList) {
+func (iv *ImageVerification) Validate(path *field.Path) (errs field.ErrorList) {
 	copy := iv
-
-	if isAuditFailureAction && iv.MutateDigest {
-		errs = append(errs, field.Invalid(path.Child("mutateDigest"), iv.MutateDigest, "mutateDigest must be set to false for ‘Audit’ failure action"))
-	}
 
 	if len(copy.ImageReferences) == 0 {
 		errs = append(errs, field.Invalid(path, iv, "An image reference is required"))

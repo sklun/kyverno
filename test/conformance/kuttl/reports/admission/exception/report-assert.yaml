@@ -6,6 +6,10 @@ metadata:
     kind: ConfigMap
     name: emergency
 spec:
+  owner:
+    apiVersion: v1
+    kind: ConfigMap
+    name: emergency
   results:
   - policy: require-labels
     resources:

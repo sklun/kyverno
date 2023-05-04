@@ -26,7 +26,7 @@ import (
 	"github.com/kyverno/kyverno/pkg/autogen"
 	"github.com/kyverno/kyverno/pkg/background/generate"
 	"github.com/kyverno/kyverno/pkg/clients/dclient"
-	engineapi "github.com/kyverno/kyverno/pkg/engine/api"
+	"github.com/kyverno/kyverno/pkg/engine/response"
 	"github.com/kyverno/kyverno/pkg/openapi"
 	policy2 "github.com/kyverno/kyverno/pkg/policy"
 	gitutils "github.com/kyverno/kyverno/pkg/utils/git"
@@ -230,7 +230,7 @@ type testFilter struct {
 	enabled  bool
 }
 
-var ftable []Table
+var ftable = []Table{}
 
 func testCommandExecute(dirPath []string, fileName string, gitBranch string, testCase string, failOnly bool, removeColor bool) (rc *resultCounts, err error) {
 	var errors []error
@@ -275,7 +275,7 @@ func testCommandExecute(dirPath []string, fileName string, gitBranch string, tes
 		tf.enabled = false
 	}
 
-	openApiManager, err := openapi.NewManager(log.Log)
+	openApiManager, err := openapi.NewManager()
 	if err != nil {
 		return rc, fmt.Errorf("unable to create open api controller, %w", err)
 	}
@@ -427,16 +427,16 @@ func getLocalDirTestFiles(fs billy.Filesystem, path, fileName string, rc *result
 	return errors
 }
 
-func buildPolicyResults(engineResponses []*engineapi.EngineResponse, testResults []api.TestResults, infos []common.Info, policyResourcePath string, fs billy.Filesystem, isGit bool) (map[string]policyreportv1alpha2.PolicyReportResult, []api.TestResults) {
+func buildPolicyResults(engineResponses []*response.EngineResponse, testResults []api.TestResults, infos []common.Info, policyResourcePath string, fs billy.Filesystem, isGit bool) (map[string]policyreportv1alpha2.PolicyReportResult, []api.TestResults) {
 	results := make(map[string]policyreportv1alpha2.PolicyReportResult)
 	now := metav1.Timestamp{Seconds: time.Now().Unix()}
 
 	for _, resp := range engineResponses {
-		policyName := resp.Policy.GetName()
-		resourceName := resp.Resource.GetName()
-		resourceKind := resp.Resource.GetKind()
-		resourceNamespace := resp.Resource.GetNamespace()
-		policyNamespace := resp.Policy.GetNamespace()
+		policyName := resp.PolicyResponse.Policy.Name
+		resourceName := resp.PolicyResponse.Resource.Name
+		resourceKind := resp.PolicyResponse.Resource.Kind
+		resourceNamespace := resp.PolicyResponse.Resource.Namespace
+		policyNamespace := resp.PolicyResponse.Policy.Namespace
 
 		var rules []string
 		for _, rule := range resp.PolicyResponse.Rules {
@@ -542,7 +542,7 @@ func buildPolicyResults(engineResponses []*engineapi.EngineResponse, testResults
 			}
 
 			for _, rule := range resp.PolicyResponse.Rules {
-				if rule.Type != engineapi.Generation || test.Rule != rule.Name {
+				if rule.Type != response.Generation || test.Rule != rule.Name {
 					continue
 				}
 
@@ -558,9 +558,9 @@ func buildPolicyResults(engineResponses []*engineapi.EngineResponse, testResults
 						continue
 					}
 
-					if rule.Status == engineapi.RuleStatusSkip {
+					if rule.Status == response.RuleStatusSkip {
 						result.Result = policyreportv1alpha2.StatusSkip
-					} else if rule.Status == engineapi.RuleStatusError {
+					} else if rule.Status == response.RuleStatusError {
 						result.Result = policyreportv1alpha2.StatusError
 					} else {
 						var x string
@@ -576,7 +576,7 @@ func buildPolicyResults(engineResponses []*engineapi.EngineResponse, testResults
 		}
 
 		for _, rule := range resp.PolicyResponse.Rules {
-			if rule.Type != engineapi.Mutation {
+			if rule.Type != response.Mutation {
 				continue
 			}
 
@@ -592,9 +592,9 @@ func buildPolicyResults(engineResponses []*engineapi.EngineResponse, testResults
 					continue
 				}
 
-				if rule.Status == engineapi.RuleStatusSkip {
+				if rule.Status == response.RuleStatusSkip {
 					result.Result = policyreportv1alpha2.StatusSkip
-				} else if rule.Status == engineapi.RuleStatusError {
+				} else if rule.Status == response.RuleStatusError {
 					result.Result = policyreportv1alpha2.StatusError
 				} else {
 					var x string
@@ -616,7 +616,7 @@ func buildPolicyResults(engineResponses []*engineapi.EngineResponse, testResults
 	for _, info := range infos {
 		for _, infoResult := range info.Results {
 			for _, rule := range infoResult.Rules {
-				if rule.Type != string(engineapi.Validation) && rule.Type != string(engineapi.ImageVerify) {
+				if rule.Type != string(response.Validation) && rule.Type != string(response.ImageVerify) {
 					continue
 				}
 
@@ -707,10 +707,10 @@ func getAndCompareResource(path string, engineResource unstructured.Unstructured
 	return status
 }
 
-func buildMessage(resp *engineapi.EngineResponse) string {
+func buildMessage(resp *response.EngineResponse) string {
 	var bldr strings.Builder
 	for _, ruleResp := range resp.PolicyResponse.Rules {
-		fmt.Fprintf(&bldr, "  %s: %s \n", ruleResp.Name, ruleResp.Status)
+		fmt.Fprintf(&bldr, "  %s: %s \n", ruleResp.Name, ruleResp.Status.String())
 		fmt.Fprintf(&bldr, "    %s \n", ruleResp.Message)
 	}
 
@@ -731,7 +731,7 @@ func getFullPath(paths []string, policyResourcePath string, isGit bool) []string
 }
 
 func applyPoliciesFromPath(fs billy.Filesystem, policyBytes []byte, isGit bool, policyResourcePath string, rc *resultCounts, openApiManager openapi.Manager, tf *testFilter, failOnly, removeColor bool) (err error) {
-	engineResponses := make([]*engineapi.EngineResponse, 0)
+	engineResponses := make([]*response.EngineResponse, 0)
 	var dClient dclient.Interface
 	values := &api.Test{}
 	var variablesString string
@@ -756,7 +756,7 @@ func applyPoliciesFromPath(fs billy.Filesystem, policyBytes []byte, isGit bool, 
 		return nil
 	}
 
-	fmt.Printf("\nExecuting %s...\n", values.Name)
+	fmt.Printf("\nExecuting %s...", values.Name)
 	valuesFile := values.Variables
 	userInfoFile := values.UserInfo
 
@@ -770,13 +770,15 @@ func applyPoliciesFromPath(fs billy.Filesystem, policyBytes []byte, isGit bool, 
 
 	// get the user info as request info from a different file
 	var userInfo v1beta1.RequestInfo
+	var subjectInfo store.Subject
 
 	if userInfoFile != "" {
-		userInfo, err = common.GetUserInfoFromPath(fs, userInfoFile, isGit, policyResourcePath)
+		userInfo, subjectInfo, err = common.GetUserInfoFromPath(fs, userInfoFile, isGit, policyResourcePath)
 		if err != nil {
 			fmt.Printf("Error: failed to load request info\nCause: %s\n", err)
 			os.Exit(1)
 		}
+		store.SetSubjects(subjectInfo)
 	}
 
 	policyFullPath := getFullPath(values.Policies, policyResourcePath, isGit)
@@ -802,7 +804,7 @@ func applyPoliciesFromPath(fs billy.Filesystem, policyBytes []byte, isGit bool, 
 		os.Exit(1)
 	}
 
-	var filteredPolicies []kyvernov1.PolicyInterface
+	filteredPolicies := []kyvernov1.PolicyInterface{}
 	for _, p := range policies {
 		for _, res := range values.Results {
 			if p.GetName() == res.Policy {
@@ -814,7 +816,7 @@ func applyPoliciesFromPath(fs billy.Filesystem, policyBytes []byte, isGit bool, 
 
 	ruleToCloneSourceResource := map[string]string{}
 	for _, p := range filteredPolicies {
-		var filteredRules []kyvernov1.Rule
+		filteredRules := []kyvernov1.Rule{}
 
 		for _, rule := range autogen.ComputeRules(p) {
 			for _, res := range values.Results {
@@ -856,7 +858,37 @@ func applyPoliciesFromPath(fs billy.Filesystem, policyBytes []byte, isGit bool, 
 		os.Exit(1)
 	}
 
-	checkableResources := selectResourcesForCheck(resources, values)
+	filteredResources := []*unstructured.Unstructured{}
+	for _, r := range resources {
+		for _, res := range values.Results {
+			for _, testr := range res.Resources {
+				if r.GetName() == testr {
+					filteredResources = append(filteredResources, r)
+				}
+			}
+			if r.GetName() == res.Resource {
+				filteredResources = append(filteredResources, r)
+				break
+			}
+		}
+	}
+	resources = filteredResources
+
+	noDuplicateResources := []*unstructured.Unstructured{}
+
+	for _, resource := range resources {
+		duplicate := false
+		for _, unique := range noDuplicateResources {
+			if resource.GetKind() == unique.GetKind() && resource.GetName() == unique.GetName() && resource.GetNamespace() == unique.GetNamespace() {
+				duplicate = true
+				fmt.Println("skipping duplicate resource, resource :", resource)
+				break
+			}
+		}
+		if !duplicate {
+			noDuplicateResources = append(noDuplicateResources, resource)
+		}
+	}
 
 	msgPolicies := "1 policy"
 	if len(policies) > 1 {
@@ -864,16 +896,16 @@ func applyPoliciesFromPath(fs billy.Filesystem, policyBytes []byte, isGit bool, 
 	}
 
 	msgResources := "1 resource"
-	if len(checkableResources) > 1 {
-		msgResources = fmt.Sprintf("%d resources", len(checkableResources))
+	if len(noDuplicateResources) > 1 {
+		msgResources = fmt.Sprintf("%d resources", len(noDuplicateResources))
 	}
 
-	if len(policies) > 0 && len(checkableResources) > 0 {
-		fmt.Printf("applying %s to %s... \n", msgPolicies, msgResources)
+	if len(policies) > 0 && len(noDuplicateResources) > 0 {
+		fmt.Printf("\napplying %s to %s... \n", msgPolicies, msgResources)
 	}
 
 	for _, policy := range policies {
-		_, err := policy2.Validate(policy, nil, nil, true, openApiManager)
+		_, err := policy2.Validate(policy, nil, true, openApiManager)
 		if err != nil {
 			log.Log.Error(err, "skipping invalid policy", "name", policy.GetName())
 			continue
@@ -893,7 +925,7 @@ func applyPoliciesFromPath(fs billy.Filesystem, policyBytes []byte, isGit bool, 
 
 		kindOnwhichPolicyIsApplied := common.GetKindsFromPolicy(policy, subresources, dClient)
 
-		for _, resource := range checkableResources {
+		for _, resource := range noDuplicateResources {
 			thisPolicyResourceValues, err := common.CheckVariableForPolicy(valuesMap, globalValMap, policy.GetName(), resource.GetName(), resource.GetKind(), variables, kindOnwhichPolicyIsApplied, variable)
 			if err != nil {
 				return sanitizederror.NewWithError(fmt.Sprintf("policy `%s` have variables. pass the values for the variables for resource `%s` using set/values_file flag", policy.GetName(), resource.GetName()), err)
@@ -928,61 +960,9 @@ func applyPoliciesFromPath(fs billy.Filesystem, policyBytes []byte, isGit bool, 
 	return
 }
 
-func selectResourcesForCheck(resources []*unstructured.Unstructured, values *api.Test) []*unstructured.Unstructured {
-	res, _, _ := selectResourcesForCheckInternal(resources, values)
-	return res
-}
-
-// selectResourcesForCheckInternal internal method to test duplicates and unused
-func selectResourcesForCheckInternal(resources []*unstructured.Unstructured, values *api.Test) ([]*unstructured.Unstructured, int, int) {
-	var duplicates int
-	var unused int
-	uniqResources := make(map[string]*unstructured.Unstructured)
-
-	for i := range resources {
-		r := resources[i]
-		key := fmt.Sprintf("%s/%s/%s", r.GetKind(), r.GetName(), r.GetNamespace())
-		if _, ok := uniqResources[key]; ok {
-			fmt.Println("skipping duplicate resource, resource :", r)
-			duplicates++
-		} else {
-			uniqResources[key] = r
-		}
-	}
-
-	selectedResources := map[string]*unstructured.Unstructured{}
-	for key := range uniqResources {
-		r := uniqResources[key]
-		for _, res := range values.Results {
-			if res.Kind == r.GetKind() {
-				for _, testr := range res.Resources {
-					if r.GetName() == testr {
-						selectedResources[key] = r
-					}
-				}
-				if r.GetName() == res.Resource {
-					selectedResources[key] = r
-				}
-			}
-		}
-	}
-
-	var checkableResources []*unstructured.Unstructured
-
-	for key := range selectedResources {
-		checkableResources = append(checkableResources, selectedResources[key])
-		delete(uniqResources, key)
-	}
-	for _, r := range uniqResources {
-		fmt.Println("skipping unused resource, resource :", r)
-		unused++
-	}
-	return checkableResources, duplicates, unused
-}
-
 func printTestResult(resps map[string]policyreportv1alpha2.PolicyReportResult, testResults []api.TestResults, rc *resultCounts, failOnly, removeColor bool) error {
 	printer := newTablePrinter(removeColor)
-	var table []Table
+	table := []Table{}
 
 	var countDeprecatedResource int
 	testCount := 1

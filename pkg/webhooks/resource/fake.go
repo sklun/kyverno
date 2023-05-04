@@ -7,8 +7,6 @@ import (
 	kyvernoinformers "github.com/kyverno/kyverno/pkg/client/informers/externalversions"
 	"github.com/kyverno/kyverno/pkg/clients/dclient"
 	"github.com/kyverno/kyverno/pkg/config"
-	"github.com/kyverno/kyverno/pkg/engine"
-	engineapi "github.com/kyverno/kyverno/pkg/engine/api"
 	"github.com/kyverno/kyverno/pkg/engine/context/resolvers"
 	"github.com/kyverno/kyverno/pkg/event"
 	"github.com/kyverno/kyverno/pkg/metrics"
@@ -35,14 +33,15 @@ func NewFakeHandlers(ctx context.Context, policyCache policycache.Cache) webhook
 	kyvernoInformers.Start(ctx.Done())
 
 	dclient := dclient.NewEmptyFakeClient()
-	configuration := config.NewDefaultConfiguration(false)
+	configuration := config.NewDefaultConfiguration()
+	rbLister := informers.Rbac().V1().RoleBindings().Lister()
+	crbLister := informers.Rbac().V1().ClusterRoleBindings().Lister()
 	urLister := kyvernoInformers.Kyverno().V1beta1().UpdateRequests().Lister().UpdateRequests(config.KyvernoNamespace())
 	peLister := kyvernoInformers.Kyverno().V2alpha1().PolicyExceptions().Lister()
-	rclient := registryclient.NewOrDie()
 
-	return &resourceHandlers{
+	return &handlers{
 		client:         dclient,
-		rclient:        rclient,
+		rclient:        registryclient.NewOrDie(),
 		configuration:  configuration,
 		metricsConfig:  metricsConfig,
 		pCache:         policyCache,
@@ -51,14 +50,7 @@ func NewFakeHandlers(ctx context.Context, policyCache policycache.Cache) webhook
 		urGenerator:    updaterequest.NewFake(),
 		eventGen:       event.NewFake(),
 		openApiManager: openapi.NewFake(),
-		pcBuilder:      webhookutils.NewPolicyContextBuilder(configuration),
-		engine: engine.NewEngine(
-			configuration,
-			config.NewDefaultMetricsConfiguration(),
-			dclient,
-			rclient,
-			engineapi.DefaultContextLoaderFactory(configMapResolver),
-			peLister,
-		),
+		pcBuilder:      webhookutils.NewPolicyContextBuilder(configuration, dclient, rbLister, crbLister, configMapResolver, peLister),
+		urUpdater:      webhookutils.NewUpdateRequestUpdater(kyvernoclient, urLister),
 	}
 }

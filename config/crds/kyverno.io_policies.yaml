@@ -3,7 +3,7 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    controller-gen.kubebuilder.io/version: v0.11.3
+    controller-gen.kubebuilder.io/version: v0.11.1
   creationTimestamp: null
   name: policies.kyverno.io
 spec:
@@ -30,9 +30,9 @@ spec:
       name: Failure Policy
       priority: 1
       type: string
-    - jsonPath: .status.conditions[?(@.type == "Ready")].status
+    - jsonPath: .status.ready
       name: Ready
-      type: string
+      type: boolean
     - jsonPath: .metadata.creationTimestamp
       name: Age
       type: date
@@ -52,9 +52,6 @@ spec:
       name: Verifyimages
       priority: 1
       type: integer
-    - jsonPath: .status.conditions[?(@.type == "Ready")].message
-      name: MESSAGE
-      type: string
     name: v1
     schema:
       openAPIV3Schema:
@@ -105,14 +102,11 @@ spec:
                 - Ignore
                 - Fail
                 type: string
-              generateExisting:
-                description: GenerateExisting controls whether to trigger generate
-                  rule in existing resources If is set to "true" generate rule will
-                  be triggered and applied to existing matched resources. Defaults
-                  to "false" if not specified.
-                type: boolean
               generateExistingOnPolicyUpdate:
-                description: Deprecated, use generateExisting instead
+                description: GenerateExistingOnPolicyUpdate controls whether to trigger
+                  generate rule in existing resources If is set to "true" generate
+                  rule will be triggered and applied to existing matched resources.
+                  Defaults to "false" if not specified.
                 type: boolean
               mutateExistingOnPolicyUpdate:
                 description: MutateExistingOnPolicyUpdate controls if a mutateExisting
@@ -136,63 +130,19 @@ spec:
                           must be provided.
                         properties:
                           apiCall:
-                            description: APICall is an HTTP request to the Kubernetes
-                              API server, or other JSON web service. The data returned
-                              is stored in the context with the name for the context
-                              entry.
+                            description: APICall defines an HTTP request to the Kubernetes
+                              API server. The JSON data retrieved is stored in the
+                              context.
                             properties:
                               jmesPath:
                                 description: JMESPath is an optional JSON Match Expression
                                   that can be used to transform the JSON response
-                                  returned from the server. For example a JMESPath
+                                  returned from the API server. For example a JMESPath
                                   of "items | length(@)" applied to the API server
-                                  response for the URLPath "/apis/apps/v1/deployments"
+                                  response to the URLPath "/apis/apps/v1/deployments"
                                   will return the total count of deployments across
                                   all namespaces.
                                 type: string
-                              service:
-                                description: Service is an API call to a JSON web
-                                  service
-                                properties:
-                                  caBundle:
-                                    description: CABundle is a PEM encoded CA bundle
-                                      which will be used to validate the server certificate.
-                                    type: string
-                                  data:
-                                    description: Data specifies the POST data sent
-                                      to the server.
-                                    items:
-                                      description: RequestData contains the HTTP POST
-                                        data
-                                      properties:
-                                        key:
-                                          description: Key is a unique identifier
-                                            for the data value
-                                          type: string
-                                        value:
-                                          description: Value is the data value
-                                          x-kubernetes-preserve-unknown-fields: true
-                                      required:
-                                      - key
-                                      - value
-                                      type: object
-                                    type: array
-                                  requestType:
-                                    default: GET
-                                    description: Method is the HTTP request type (GET
-                                      or POST).
-                                    enum:
-                                    - GET
-                                    - POST
-                                    type: string
-                                  urlPath:
-                                    description: URL is the JSON web service URL.
-                                      The typical format is `https://{service}.{namespace}:{port}/{path}`.
-                                    type: string
-                                required:
-                                - requestType
-                                - urlPath
-                                type: object
                               urlPath:
                                 description: URLPath is the URL path to be used in
                                   the HTTP GET request to the Kubernetes API server
@@ -200,6 +150,8 @@ spec:
                                   The format required is the same format used by the
                                   `kubectl get --raw` command.
                                 type: string
+                            required:
+                            - urlPath
                             type: object
                           configMap:
                             description: ConfigMap is the ConfigMap reference.
@@ -369,21 +321,6 @@ spec:
                                       "*" (matches zero or many characters) and "?"
                                       (at least one character).
                                     items:
-                                      type: string
-                                    type: array
-                                  operations:
-                                    description: Operations can contain values ["CREATE,
-                                      "UPDATE", "CONNECT", "DELETE"], which are used
-                                      to match a specific action.
-                                    items:
-                                      description: AdmissionOperation can have one
-                                        of the values CREATE, UPDATE, CONNECT, DELETE,
-                                        which are used to match a specific action.
-                                      enum:
-                                      - CREATE
-                                      - CONNECT
-                                      - UPDATE
-                                      - DELETE
                                       type: string
                                     type: array
                                   selector:
@@ -604,21 +541,6 @@ spec:
                                     items:
                                       type: string
                                     type: array
-                                  operations:
-                                    description: Operations can contain values ["CREATE,
-                                      "UPDATE", "CONNECT", "DELETE"], which are used
-                                      to match a specific action.
-                                    items:
-                                      description: AdmissionOperation can have one
-                                        of the values CREATE, UPDATE, CONNECT, DELETE,
-                                        which are used to match a specific action.
-                                      enum:
-                                      - CREATE
-                                      - CONNECT
-                                      - UPDATE
-                                      - DELETE
-                                      type: string
-                                    type: array
                                   selector:
                                     description: 'Selector is a label selector. Label
                                       keys and values in `matchLabels` support the
@@ -823,21 +745,6 @@ spec:
                                 Each name supports wildcard characters "*" (matches
                                 zero or many characters) and "?" (at least one character).
                               items:
-                                type: string
-                              type: array
-                            operations:
-                              description: Operations can contain values ["CREATE,
-                                "UPDATE", "CONNECT", "DELETE"], which are used to
-                                match a specific action.
-                              items:
-                                description: AdmissionOperation can have one of the
-                                  values CREATE, UPDATE, CONNECT, DELETE, which are
-                                  used to match a specific action.
-                                enum:
-                                - CREATE
-                                - CONNECT
-                                - UPDATE
-                                - DELETE
                                 type: string
                               type: array
                             selector:
@@ -1047,15 +954,6 @@ spec:
                       additionalProperties:
                         items:
                           properties:
-                            jmesPath:
-                              description: 'JMESPath is an optional JMESPath expression
-                                to apply to the image value. This is useful when the
-                                extracted image begins with a prefix like ''docker://''.
-                                The ''trim_prefix'' function may be used to trim the
-                                prefix: trim_prefix(@, ''docker://''). Note - Image
-                                digest mutation may not be used when applying a JMESPAth
-                                to an image.'
-                              type: string
                             key:
                               description: Key is an optional name of the field within
                                 'path' that will be used to uniquely identify an image.
@@ -1204,21 +1102,6 @@ spec:
                                       "*" (matches zero or many characters) and "?"
                                       (at least one character).
                                     items:
-                                      type: string
-                                    type: array
-                                  operations:
-                                    description: Operations can contain values ["CREATE,
-                                      "UPDATE", "CONNECT", "DELETE"], which are used
-                                      to match a specific action.
-                                    items:
-                                      description: AdmissionOperation can have one
-                                        of the values CREATE, UPDATE, CONNECT, DELETE,
-                                        which are used to match a specific action.
-                                      enum:
-                                      - CREATE
-                                      - CONNECT
-                                      - UPDATE
-                                      - DELETE
                                       type: string
                                     type: array
                                   selector:
@@ -1439,21 +1322,6 @@ spec:
                                     items:
                                       type: string
                                     type: array
-                                  operations:
-                                    description: Operations can contain values ["CREATE,
-                                      "UPDATE", "CONNECT", "DELETE"], which are used
-                                      to match a specific action.
-                                    items:
-                                      description: AdmissionOperation can have one
-                                        of the values CREATE, UPDATE, CONNECT, DELETE,
-                                        which are used to match a specific action.
-                                      enum:
-                                      - CREATE
-                                      - CONNECT
-                                      - UPDATE
-                                      - DELETE
-                                      type: string
-                                    type: array
                                   selector:
                                     description: 'Selector is a label selector. Label
                                       keys and values in `matchLabels` support the
@@ -1660,21 +1528,6 @@ spec:
                               items:
                                 type: string
                               type: array
-                            operations:
-                              description: Operations can contain values ["CREATE,
-                                "UPDATE", "CONNECT", "DELETE"], which are used to
-                                match a specific action.
-                              items:
-                                description: AdmissionOperation can have one of the
-                                  values CREATE, UPDATE, CONNECT, DELETE, which are
-                                  used to match a specific action.
-                                enum:
-                                - CREATE
-                                - CONNECT
-                                - UPDATE
-                                - DELETE
-                                type: string
-                              type: array
                             selector:
                               description: 'Selector is a label selector. Label keys
                                 and values in `matchLabels` support the wildcard characters
@@ -1781,9 +1634,9 @@ spec:
                             sub-elements by creating a context for each entry in the
                             list and looping over it to apply the specified logic.
                           items:
-                            description: ForEachMutation applies mutation rules to
-                              a list of sub-elements by creating a context for each
-                              entry in the list and looping over it to apply the specified
+                            description: ForEach applies mutation rules to a list
+                              of sub-elements by creating a context for each entry
+                              in the list and looping over it to apply the specified
                               logic.
                             properties:
                               context:
@@ -1795,66 +1648,20 @@ spec:
                                     reference or a APILookup must be provided.
                                   properties:
                                     apiCall:
-                                      description: APICall is an HTTP request to the
-                                        Kubernetes API server, or other JSON web service.
-                                        The data returned is stored in the context
-                                        with the name for the context entry.
+                                      description: APICall defines an HTTP request
+                                        to the Kubernetes API server. The JSON data
+                                        retrieved is stored in the context.
                                       properties:
                                         jmesPath:
                                           description: JMESPath is an optional JSON
                                             Match Expression that can be used to transform
-                                            the JSON response returned from the server.
-                                            For example a JMESPath of "items | length(@)"
-                                            applied to the API server response for
-                                            the URLPath "/apis/apps/v1/deployments"
+                                            the JSON response returned from the API
+                                            server. For example a JMESPath of "items
+                                            | length(@)" applied to the API server
+                                            response to the URLPath "/apis/apps/v1/deployments"
                                             will return the total count of deployments
                                             across all namespaces.
                                           type: string
-                                        service:
-                                          description: Service is an API call to a
-                                            JSON web service
-                                          properties:
-                                            caBundle:
-                                              description: CABundle is a PEM encoded
-                                                CA bundle which will be used to validate
-                                                the server certificate.
-                                              type: string
-                                            data:
-                                              description: Data specifies the POST
-                                                data sent to the server.
-                                              items:
-                                                description: RequestData contains
-                                                  the HTTP POST data
-                                                properties:
-                                                  key:
-                                                    description: Key is a unique identifier
-                                                      for the data value
-                                                    type: string
-                                                  value:
-                                                    description: Value is the data
-                                                      value
-                                                    x-kubernetes-preserve-unknown-fields: true
-                                                required:
-                                                - key
-                                                - value
-                                                type: object
-                                              type: array
-                                            requestType:
-                                              default: GET
-                                              description: Method is the HTTP request
-                                                type (GET or POST).
-                                              enum:
-                                              - GET
-                                              - POST
-                                              type: string
-                                            urlPath:
-                                              description: URL is the JSON web service
-                                                URL. The typical format is `https://{service}.{namespace}:{port}/{path}`.
-                                              type: string
-                                          required:
-                                          - requestType
-                                          - urlPath
-                                          type: object
                                         urlPath:
                                           description: URLPath is the URL path to
                                             be used in the HTTP GET request to the
@@ -1863,6 +1670,8 @@ spec:
                                             format required is the same format used
                                             by the `kubectl get --raw` command.
                                           type: string
+                                      required:
+                                      - urlPath
                                       type: object
                                     configMap:
                                       description: ConfigMap is the ConfigMap reference.
@@ -2061,147 +1870,10 @@ spec:
                           description: Targets defines the target resources to be
                             mutated.
                           items:
-                            description: TargetResourceSpec defines targets for mutating
-                              existing resources.
                             properties:
                               apiVersion:
                                 description: APIVersion specifies resource apiVersion.
                                 type: string
-                              context:
-                                description: Context defines variables and data sources
-                                  that can be used during rule execution.
-                                items:
-                                  description: ContextEntry adds variables and data
-                                    sources to a rule Context. Either a ConfigMap
-                                    reference or a APILookup must be provided.
-                                  properties:
-                                    apiCall:
-                                      description: APICall is an HTTP request to the
-                                        Kubernetes API server, or other JSON web service.
-                                        The data returned is stored in the context
-                                        with the name for the context entry.
-                                      properties:
-                                        jmesPath:
-                                          description: JMESPath is an optional JSON
-                                            Match Expression that can be used to transform
-                                            the JSON response returned from the server.
-                                            For example a JMESPath of "items | length(@)"
-                                            applied to the API server response for
-                                            the URLPath "/apis/apps/v1/deployments"
-                                            will return the total count of deployments
-                                            across all namespaces.
-                                          type: string
-                                        service:
-                                          description: Service is an API call to a
-                                            JSON web service
-                                          properties:
-                                            caBundle:
-                                              description: CABundle is a PEM encoded
-                                                CA bundle which will be used to validate
-                                                the server certificate.
-                                              type: string
-                                            data:
-                                              description: Data specifies the POST
-                                                data sent to the server.
-                                              items:
-                                                description: RequestData contains
-                                                  the HTTP POST data
-                                                properties:
-                                                  key:
-                                                    description: Key is a unique identifier
-                                                      for the data value
-                                                    type: string
-                                                  value:
-                                                    description: Value is the data
-                                                      value
-                                                    x-kubernetes-preserve-unknown-fields: true
-                                                required:
-                                                - key
-                                                - value
-                                                type: object
-                                              type: array
-                                            requestType:
-                                              default: GET
-                                              description: Method is the HTTP request
-                                                type (GET or POST).
-                                              enum:
-                                              - GET
-                                              - POST
-                                              type: string
-                                            urlPath:
-                                              description: URL is the JSON web service
-                                                URL. The typical format is `https://{service}.{namespace}:{port}/{path}`.
-                                              type: string
-                                          required:
-                                          - requestType
-                                          - urlPath
-                                          type: object
-                                        urlPath:
-                                          description: URLPath is the URL path to
-                                            be used in the HTTP GET request to the
-                                            Kubernetes API server (e.g. "/api/v1/namespaces"
-                                            or  "/apis/apps/v1/deployments"). The
-                                            format required is the same format used
-                                            by the `kubectl get --raw` command.
-                                          type: string
-                                      type: object
-                                    configMap:
-                                      description: ConfigMap is the ConfigMap reference.
-                                      properties:
-                                        name:
-                                          description: Name is the ConfigMap name.
-                                          type: string
-                                        namespace:
-                                          description: Namespace is the ConfigMap
-                                            namespace.
-                                          type: string
-                                      required:
-                                      - name
-                                      type: object
-                                    imageRegistry:
-                                      description: ImageRegistry defines requests
-                                        to an OCI/Docker V2 registry to fetch image
-                                        details.
-                                      properties:
-                                        jmesPath:
-                                          description: JMESPath is an optional JSON
-                                            Match Expression that can be used to transform
-                                            the ImageData struct returned as a result
-                                            of processing the image reference.
-                                          type: string
-                                        reference:
-                                          description: 'Reference is image reference
-                                            to a container image in the registry.
-                                            Example: ghcr.io/kyverno/kyverno:latest'
-                                          type: string
-                                      required:
-                                      - reference
-                                      type: object
-                                    name:
-                                      description: Name is the variable name.
-                                      type: string
-                                    variable:
-                                      description: Variable defines an arbitrary JMESPath
-                                        context variable that can be defined inline.
-                                      properties:
-                                        default:
-                                          description: Default is an optional arbitrary
-                                            JSON object that the variable may take
-                                            if the JMESPath expression evaluates to
-                                            nil
-                                          x-kubernetes-preserve-unknown-fields: true
-                                        jmesPath:
-                                          description: JMESPath is an optional JMESPath
-                                            Expression that can be used to transform
-                                            the variable.
-                                          type: string
-                                        value:
-                                          description: Value is any arbitrary JSON
-                                            object representable in YAML or JSON form.
-                                          x-kubernetes-preserve-unknown-fields: true
-                                      type: object
-                                  type: object
-                                type: array
                               kind:
                                 description: Kind specifies resource kind.
                                 type: string
@@ -2211,15 +1883,6 @@ spec:
                               namespace:
                                 description: Namespace specifies resource namespace.
                                 type: string
-                              preconditions:
-                                description: 'Preconditions are used to determine
-                                  if a policy rule should be applied by evaluating
-                                  a set of conditions. The declaration can contain
-                                  nested `any` or `all` statements. A direct list
-                                  of conditions (without `any` or `all` statements
-                                  is supported for backwards compatibility but will
-                                  be deprecated in the next major release. See: https://kyverno.io/docs/writing-policies/preconditions/'
-                                x-kubernetes-preserve-unknown-fields: true
                             type: object
                           type: array
                       type: object
@@ -2261,10 +1924,10 @@ spec:
                             sub-elements by creating a context for each entry in the
                             list and looping over it to apply the specified logic.
                           items:
-                            description: ForEachValidation applies validate rules
-                              to a list of sub-elements by creating a context for
-                              each entry in the list and looping over it to apply
-                              the specified logic.
+                            description: ForEach applies validate rules to a list
+                              of sub-elements by creating a context for each entry
+                              in the list and looping over it to apply the specified
+                              logic.
                             properties:
                               anyPattern:
                                 description: AnyPattern specifies list of validation
@@ -2280,66 +1943,20 @@ spec:
                                     reference or a APILookup must be provided.
                                   properties:
                                     apiCall:
-                                      description: APICall is an HTTP request to the
-                                        Kubernetes API server, or other JSON web service.
-                                        The data returned is stored in the context
-                                        with the name for the context entry.
+                                      description: APICall defines an HTTP request
+                                        to the Kubernetes API server. The JSON data
+                                        retrieved is stored in the context.
                                       properties:
                                         jmesPath:
                                           description: JMESPath is an optional JSON
                                             Match Expression that can be used to transform
-                                            the JSON response returned from the server.
-                                            For example a JMESPath of "items | length(@)"
-                                            applied to the API server response for
-                                            the URLPath "/apis/apps/v1/deployments"
+                                            the JSON response returned from the API
+                                            server. For example a JMESPath of "items
+                                            | length(@)" applied to the API server
+                                            response to the URLPath "/apis/apps/v1/deployments"
                                             will return the total count of deployments
                                             across all namespaces.
                                           type: string
-                                        service:
-                                          description: Service is an API call to a
-                                            JSON web service
-                                          properties:
-                                            caBundle:
-                                              description: CABundle is a PEM encoded
-                                                CA bundle which will be used to validate
-                                                the server certificate.
-                                              type: string
-                                            data:
-                                              description: Data specifies the POST
-                                                data sent to the server.
-                                              items:
-                                                description: RequestData contains
-                                                  the HTTP POST data
-                                                properties:
-                                                  key:
-                                                    description: Key is a unique identifier
-                                                      for the data value
-                                                    type: string
-                                                  value:
-                                                    description: Value is the data
-                                                      value
-                                                    x-kubernetes-preserve-unknown-fields: true
-                                                required:
-                                                - key
-                                                - value
-                                                type: object
-                                              type: array
-                                            requestType:
-                                              default: GET
-                                              description: Method is the HTTP request
-                                                type (GET or POST).
-                                              enum:
-                                              - GET
-                                              - POST
-                                              type: string
-                                            urlPath:
-                                              description: URL is the JSON web service
-                                                URL. The typical format is `https://{service}.{namespace}:{port}/{path}`.
-                                              type: string
-                                          required:
-                                          - requestType
-                                          - urlPath
-                                          type: object
                                         urlPath:
                                           description: URLPath is the URL path to
                                             be used in the HTTP GET request to the
@@ -2348,6 +1965,8 @@ spec:
                                             format required is the same format used
                                             by the `kubectl get --raw` command.
                                           type: string
+                                      required:
+                                      - urlPath
                                       type: object
                                     configMap:
                                       description: ConfigMap is the ConfigMap reference.
@@ -2856,7 +2475,7 @@ spec:
                               description: Version defines the Pod Security Standard
                                 versions that Kubernetes supports. Allowed values
                                 are v1.19, v1.20, v1.21, v1.22, v1.23, v1.24, v1.25,
-                                v1.26, latest. Defaults to latest.
+                                latest. Defaults to latest.
                               enum:
                               - v1.19
                               - v1.20
@@ -2865,7 +2484,6 @@ spec:
                               - v1.23
                               - v1.24
                               - v1.25
-                              - v1.26
                               - latest
                               type: string
                           type: object
@@ -3474,14 +3092,6 @@ spec:
                               signing, for example an email address Deprecated. Use
                               KeylessAttestor instead.
                             type: string
-                          type:
-                            description: Type specifies the method of signature validation.
-                              The allowed options are Cosign and NotaryV2. By default
-                              Cosign is used if a type is not specified.
-                            enum:
-                            - Cosign
-                            - NotaryV2
-                            type: string
                           verifyDigest:
                             default: true
                             description: VerifyDigest validates that images have a
@@ -3524,54 +3134,6 @@ spec:
                       - Audit
                       - Enforce
                       type: string
-                    namespaceSelector:
-                      description: A label selector is a label query over a set of
-                        resources. The result of matchLabels and matchExpressions
-                        are ANDed. An empty label selector matches all objects. A
-                        null label selector matches no objects.
-                      properties:
-                        matchExpressions:
-                          description: matchExpressions is a list of label selector
-                            requirements. The requirements are ANDed.
-                          items:
-                            description: A label selector requirement is a selector
-                              that contains values, a key, and an operator that relates
-                              the key and values.
-                            properties:
-                              key:
-                                description: key is the label key that the selector
-                                  applies to.
-                                type: string
-                              operator:
-                                description: operator represents a key's relationship
-                                  to a set of values. Valid operators are In, NotIn,
-                                  Exists and DoesNotExist.
-                                type: string
-                              values:
-                                description: values is an array of string values.
-                                  If the operator is In or NotIn, the values array
-                                  must be non-empty. If the operator is Exists or
-                                  DoesNotExist, the values array must be empty. This
-                                  array is replaced during a strategic merge patch.
-                                items:
-                                  type: string
-                                type: array
-                            required:
-                            - key
-                            - operator
-                            type: object
-                          type: array
-                        matchLabels:
-                          additionalProperties:
-                            type: string
-                          description: matchLabels is a map of {key,value} pairs.
-                            A single {key,value} in the matchLabels map is equivalent
-                            to an element of matchExpressions, whose key field is
-                            "key", the operator is "In", and the values array contains
-                            only "value". The requirements are ANDed.
-                          type: object
-                      type: object
-                      x-kubernetes-map-type: atomic
                     namespaces:
                       items:
                         type: string
@@ -3612,64 +3174,19 @@ spec:
                               APILookup must be provided.
                             properties:
                               apiCall:
-                                description: APICall is an HTTP request to the Kubernetes
-                                  API server, or other JSON web service. The data
-                                  returned is stored in the context with the name
-                                  for the context entry.
+                                description: APICall defines an HTTP request to the
+                                  Kubernetes API server. The JSON data retrieved is
+                                  stored in the context.
                                 properties:
                                   jmesPath:
                                     description: JMESPath is an optional JSON Match
                                       Expression that can be used to transform the
-                                      JSON response returned from the server. For
-                                      example a JMESPath of "items | length(@)" applied
-                                      to the API server response for the URLPath "/apis/apps/v1/deployments"
-                                      will return the total count of deployments across
-                                      all namespaces.
+                                      JSON response returned from the API server.
+                                      For example a JMESPath of "items | length(@)"
+                                      applied to the API server response to the URLPath
+                                      "/apis/apps/v1/deployments" will return the
+                                      total count of deployments across all namespaces.
                                     type: string
-                                  service:
-                                    description: Service is an API call to a JSON
-                                      web service
-                                    properties:
-                                      caBundle:
-                                        description: CABundle is a PEM encoded CA
-                                          bundle which will be used to validate the
-                                          server certificate.
-                                        type: string
-                                      data:
-                                        description: Data specifies the POST data
-                                          sent to the server.
-                                        items:
-                                          description: RequestData contains the HTTP
-                                            POST data
-                                          properties:
-                                            key:
-                                              description: Key is a unique identifier
-                                                for the data value
-                                              type: string
-                                            value:
-                                              description: Value is the data value
-                                              x-kubernetes-preserve-unknown-fields: true
-                                          required:
-                                          - key
-                                          - value
-                                          type: object
-                                        type: array
-                                      requestType:
-                                        default: GET
-                                        description: Method is the HTTP request type
-                                          (GET or POST).
-                                        enum:
-                                        - GET
-                                        - POST
-                                        type: string
-                                      urlPath:
-                                        description: URL is the JSON web service URL.
-                                          The typical format is `https://{service}.{namespace}:{port}/{path}`.
-                                        type: string
-                                    required:
-                                    - requestType
-                                    - urlPath
-                                    type: object
                                   urlPath:
                                     description: URLPath is the URL path to be used
                                       in the HTTP GET request to the Kubernetes API
@@ -3677,6 +3194,8 @@ spec:
                                       The format required is the same format used
                                       by the `kubectl get --raw` command.
                                     type: string
+                                required:
+                                - urlPath
                                 type: object
                               configMap:
                                 description: ConfigMap is the ConfigMap reference.
@@ -3852,22 +3371,6 @@ spec:
                                           "*" (matches zero or many characters) and
                                           "?" (at least one character).
                                         items:
-                                          type: string
-                                        type: array
-                                      operations:
-                                        description: Operations can contain values
-                                          ["CREATE, "UPDATE", "CONNECT", "DELETE"],
-                                          which are used to match a specific action.
-                                        items:
-                                          description: AdmissionOperation can have
-                                            one of the values CREATE, UPDATE, CONNECT,
-                                            DELETE, which are used to match a specific
-                                            action.
-                                          enum:
-                                          - CREATE
-                                          - CONNECT
-                                          - UPDATE
-                                          - DELETE
                                           type: string
                                         type: array
                                       selector:
@@ -4095,22 +3598,6 @@ spec:
                                         items:
                                           type: string
                                         type: array
-                                      operations:
-                                        description: Operations can contain values
-                                          ["CREATE, "UPDATE", "CONNECT", "DELETE"],
-                                          which are used to match a specific action.
-                                        items:
-                                          description: AdmissionOperation can have
-                                            one of the values CREATE, UPDATE, CONNECT,
-                                            DELETE, which are used to match a specific
-                                            action.
-                                          enum:
-                                          - CREATE
-                                          - CONNECT
-                                          - UPDATE
-                                          - DELETE
-                                          type: string
-                                        type: array
                                       selector:
                                         description: 'Selector is a label selector.
                                           Label keys and values in `matchLabels` support
@@ -4328,21 +3815,6 @@ spec:
                                     "*" (matches zero or many characters) and "?"
                                     (at least one character).
                                   items:
-                                    type: string
-                                  type: array
-                                operations:
-                                  description: Operations can contain values ["CREATE,
-                                    "UPDATE", "CONNECT", "DELETE"], which are used
-                                    to match a specific action.
-                                  items:
-                                    description: AdmissionOperation can have one of
-                                      the values CREATE, UPDATE, CONNECT, DELETE,
-                                      which are used to match a specific action.
-                                    enum:
-                                    - CREATE
-                                    - CONNECT
-                                    - UPDATE
-                                    - DELETE
                                     type: string
                                   type: array
                                 selector:
@@ -4565,15 +4037,6 @@ spec:
                           additionalProperties:
                             items:
                               properties:
-                                jmesPath:
-                                  description: 'JMESPath is an optional JMESPath expression
-                                    to apply to the image value. This is useful when
-                                    the extracted image begins with a prefix like
-                                    ''docker://''. The ''trim_prefix'' function may
-                                    be used to trim the prefix: trim_prefix(@, ''docker://'').
-                                    Note - Image digest mutation may not be used when
-                                    applying a JMESPAth to an image.'
-                                  type: string
                                 key:
                                   description: Key is an optional name of the field
                                     within 'path' that will be used to uniquely identify
@@ -4725,22 +4188,6 @@ spec:
                                           "*" (matches zero or many characters) and
                                           "?" (at least one character).
                                         items:
-                                          type: string
-                                        type: array
-                                      operations:
-                                        description: Operations can contain values
-                                          ["CREATE, "UPDATE", "CONNECT", "DELETE"],
-                                          which are used to match a specific action.
-                                        items:
-                                          description: AdmissionOperation can have
-                                            one of the values CREATE, UPDATE, CONNECT,
-                                            DELETE, which are used to match a specific
-                                            action.
-                                          enum:
-                                          - CREATE
-                                          - CONNECT
-                                          - UPDATE
-                                          - DELETE
                                           type: string
                                         type: array
                                       selector:
@@ -4968,22 +4415,6 @@ spec:
                                         items:
                                           type: string
                                         type: array
-                                      operations:
-                                        description: Operations can contain values
-                                          ["CREATE, "UPDATE", "CONNECT", "DELETE"],
-                                          which are used to match a specific action.
-                                        items:
-                                          description: AdmissionOperation can have
-                                            one of the values CREATE, UPDATE, CONNECT,
-                                            DELETE, which are used to match a specific
-                                            action.
-                                          enum:
-                                          - CREATE
-                                          - CONNECT
-                                          - UPDATE
-                                          - DELETE
-                                          type: string
-                                        type: array
                                       selector:
                                         description: 'Selector is a label selector.
                                           Label keys and values in `matchLabels` support
@@ -5203,21 +4634,6 @@ spec:
                                   items:
                                     type: string
                                   type: array
-                                operations:
-                                  description: Operations can contain values ["CREATE,
-                                    "UPDATE", "CONNECT", "DELETE"], which are used
-                                    to match a specific action.
-                                  items:
-                                    description: AdmissionOperation can have one of
-                                      the values CREATE, UPDATE, CONNECT, DELETE,
-                                      which are used to match a specific action.
-                                    enum:
-                                    - CREATE
-                                    - CONNECT
-                                    - UPDATE
-                                    - DELETE
-                                    type: string
-                                  type: array
                                 selector:
                                   description: 'Selector is a label selector. Label
                                     keys and values in `matchLabels` support the wildcard
@@ -5330,10 +4746,10 @@ spec:
                                 in the list and looping over it to apply the specified
                                 logic.
                               items:
-                                description: ForEachMutation applies mutation rules
-                                  to a list of sub-elements by creating a context
-                                  for each entry in the list and looping over it to
-                                  apply the specified logic.
+                                description: ForEach applies mutation rules to a list
+                                  of sub-elements by creating a context for each entry
+                                  in the list and looping over it to apply the specified
+                                  logic.
                                 properties:
                                   context:
                                     description: Context defines variables and data
@@ -5344,70 +4760,21 @@ spec:
                                         reference or a APILookup must be provided.
                                       properties:
                                         apiCall:
-                                          description: APICall is an HTTP request
-                                            to the Kubernetes API server, or other
-                                            JSON web service. The data returned is
-                                            stored in the context with the name for
-                                            the context entry.
+                                          description: APICall defines an HTTP request
+                                            to the Kubernetes API server. The JSON
+                                            data retrieved is stored in the context.
                                           properties:
                                             jmesPath:
                                               description: JMESPath is an optional
                                                 JSON Match Expression that can be
                                                 used to transform the JSON response
-                                                returned from the server. For example
-                                                a JMESPath of "items | length(@)"
+                                                returned from the API server. For
+                                                example a JMESPath of "items | length(@)"
                                                 applied to the API server response
-                                                for the URLPath "/apis/apps/v1/deployments"
+                                                to the URLPath "/apis/apps/v1/deployments"
                                                 will return the total count of deployments
                                                 across all namespaces.
                                               type: string
-                                            service:
-                                              description: Service is an API call
-                                                to a JSON web service
-                                              properties:
-                                                caBundle:
-                                                  description: CABundle is a PEM encoded
-                                                    CA bundle which will be used to
-                                                    validate the server certificate.
-                                                  type: string
-                                                data:
-                                                  description: Data specifies the
-                                                    POST data sent to the server.
-                                                  items:
-                                                    description: RequestData contains
-                                                      the HTTP POST data
-                                                    properties:
-                                                      key:
-                                                        description: Key is a unique
-                                                          identifier for the data
-                                                          value
-                                                        type: string
-                                                      value:
-                                                        description: Value is the
-                                                          data value
-                                                        x-kubernetes-preserve-unknown-fields: true
-                                                    required:
-                                                    - key
-                                                    - value
-                                                    type: object
-                                                  type: array
-                                                requestType:
-                                                  default: GET
-                                                  description: Method is the HTTP
-                                                    request type (GET or POST).
-                                                  enum:
-                                                  - GET
-                                                  - POST
-                                                  type: string
-                                                urlPath:
-                                                  description: URL is the JSON web
-                                                    service URL. The typical format
-                                                    is `https://{service}.{namespace}:{port}/{path}`.
-                                                  type: string
-                                              required:
-                                              - requestType
-                                              - urlPath
-                                              type: object
                                             urlPath:
                                               description: URLPath is the URL path
                                                 to be used in the HTTP GET request
@@ -5416,6 +4783,8 @@ spec:
                                                 The format required is the same format
                                                 used by the `kubectl get --raw` command.
                                               type: string
+                                          required:
+                                          - urlPath
                                           type: object
                                         configMap:
                                           description: ConfigMap is the ConfigMap
@@ -5624,155 +4993,10 @@ spec:
                               description: Targets defines the target resources to
                                 be mutated.
                               items:
-                                description: TargetResourceSpec defines targets for
-                                  mutating existing resources.
                                 properties:
                                   apiVersion:
                                     description: APIVersion specifies resource apiVersion.
                                     type: string
-                                  context:
-                                    description: Context defines variables and data
-                                      sources that can be used during rule execution.
-                                    items:
-                                      description: ContextEntry adds variables and
-                                        data sources to a rule Context. Either a ConfigMap
-                                        reference or a APILookup must be provided.
-                                      properties:
-                                        apiCall:
-                                          description: APICall is an HTTP request
-                                            to the Kubernetes API server, or other
-                                            JSON web service. The data returned is
-                                            stored in the context with the name for
-                                            the context entry.
-                                          properties:
-                                            jmesPath:
-                                              description: JMESPath is an optional
-                                                JSON Match Expression that can be
-                                                used to transform the JSON response
-                                                returned from the server. For example
-                                                a JMESPath of "items | length(@)"
-                                                applied to the API server response
-                                                for the URLPath "/apis/apps/v1/deployments"
-                                                will return the total count of deployments
-                                                across all namespaces.
-                                              type: string
-                                            service:
-                                              description: Service is an API call
-                                                to a JSON web service
-                                              properties:
-                                                caBundle:
-                                                  description: CABundle is a PEM encoded
-                                                    CA bundle which will be used to
-                                                    validate the server certificate.
-                                                  type: string
-                                                data:
-                                                  description: Data specifies the
-                                                    POST data sent to the server.
-                                                  items:
-                                                    description: RequestData contains
-                                                      the HTTP POST data
-                                                    properties:
-                                                      key:
-                                                        description: Key is a unique
-                                                          identifier for the data
-                                                          value
-                                                        type: string
-                                                      value:
-                                                        description: Value is the
-                                                          data value
-                                                        x-kubernetes-preserve-unknown-fields: true
-                                                    required:
-                                                    - key
-                                                    - value
-                                                    type: object
-                                                  type: array
-                                                requestType:
-                                                  default: GET
-                                                  description: Method is the HTTP
-                                                    request type (GET or POST).
-                                                  enum:
-                                                  - GET
-                                                  - POST
-                                                  type: string
-                                                urlPath:
-                                                  description: URL is the JSON web
-                                                    service URL. The typical format
-                                                    is `https://{service}.{namespace}:{port}/{path}`.
-                                                  type: string
-                                              required:
-                                              - requestType
-                                              - urlPath
-                                              type: object
-                                            urlPath:
-                                              description: URLPath is the URL path
-                                                to be used in the HTTP GET request
-                                                to the Kubernetes API server (e.g.
-                                                "/api/v1/namespaces" or  "/apis/apps/v1/deployments").
-                                                The format required is the same format
-                                                used by the `kubectl get --raw` command.
-                                              type: string
-                                          type: object
-                                        configMap:
-                                          description: ConfigMap is the ConfigMap
-                                            reference.
-                                          properties:
-                                            name:
-                                              description: Name is the ConfigMap name.
-                                              type: string
-                                            namespace:
-                                              description: Namespace is the ConfigMap
-                                                namespace.
-                                              type: string
-                                          required:
-                                          - name
-                                          type: object
-                                        imageRegistry:
-                                          description: ImageRegistry defines requests
-                                            to an OCI/Docker V2 registry to fetch
-                                            image details.
-                                          properties:
-                                            jmesPath:
-                                              description: JMESPath is an optional
-                                                JSON Match Expression that can be
-                                                used to transform the ImageData struct
-                                                returned as a result of processing
-                                                the image reference.
-                                              type: string
-                                            reference:
-                                              description: 'Reference is image reference
-                                                to a container image in the registry.
-                                                Example: ghcr.io/kyverno/kyverno:latest'
-                                              type: string
-                                          required:
-                                          - reference
-                                          type: object
-                                        name:
-                                          description: Name is the variable name.
-                                          type: string
-                                        variable:
-                                          description: Variable defines an arbitrary
-                                            JMESPath context variable that can be
-                                            defined inline.
-                                          properties:
-                                            default:
-                                              description: Default is an optional
-                                                arbitrary JSON object that the variable
-                                                may take if the JMESPath expression
-                                                evaluates to nil
-                                              x-kubernetes-preserve-unknown-fields: true
-                                            jmesPath:
-                                              description: JMESPath is an optional
-                                                JMESPath Expression that can be used
-                                                to transform the variable.
-                                              type: string
-                                            value:
-                                              description: Value is any arbitrary
-                                                JSON object representable in YAML
-                                                or JSON form.
-                                              x-kubernetes-preserve-unknown-fields: true
-                                          type: object
-                                      type: object
-                                    type: array
                                   kind:
                                     description: Kind specifies resource kind.
                                     type: string
@@ -5782,16 +5006,6 @@ spec:
                                   namespace:
                                     description: Namespace specifies resource namespace.
                                     type: string
-                                  preconditions:
-                                    description: 'Preconditions are used to determine
-                                      if a policy rule should be applied by evaluating
-                                      a set of conditions. The declaration can contain
-                                      nested `any` or `all` statements. A direct list
-                                      of conditions (without `any` or `all` statements
-                                      is supported for backwards compatibility but
-                                      will be deprecated in the next major release.
-                                      See: https://kyverno.io/docs/writing-policies/preconditions/'
-                                    x-kubernetes-preserve-unknown-fields: true
                                 type: object
                               type: array
                           type: object
@@ -5835,10 +5049,10 @@ spec:
                                 in the list and looping over it to apply the specified
                                 logic.
                               items:
-                                description: ForEachValidation applies validate rules
-                                  to a list of sub-elements by creating a context
-                                  for each entry in the list and looping over it to
-                                  apply the specified logic.
+                                description: ForEach applies validate rules to a list
+                                  of sub-elements by creating a context for each entry
+                                  in the list and looping over it to apply the specified
+                                  logic.
                                 properties:
                                   anyPattern:
                                     description: AnyPattern specifies list of validation
@@ -5854,70 +5068,21 @@ spec:
                                         reference or a APILookup must be provided.
                                       properties:
                                         apiCall:
-                                          description: APICall is an HTTP request
-                                            to the Kubernetes API server, or other
-                                            JSON web service. The data returned is
-                                            stored in the context with the name for
-                                            the context entry.
+                                          description: APICall defines an HTTP request
+                                            to the Kubernetes API server. The JSON
+                                            data retrieved is stored in the context.
                                           properties:
                                             jmesPath:
                                               description: JMESPath is an optional
                                                 JSON Match Expression that can be
                                                 used to transform the JSON response
-                                                returned from the server. For example
-                                                a JMESPath of "items | length(@)"
+                                                returned from the API server. For
+                                                example a JMESPath of "items | length(@)"
                                                 applied to the API server response
-                                                for the URLPath "/apis/apps/v1/deployments"
+                                                to the URLPath "/apis/apps/v1/deployments"
                                                 will return the total count of deployments
                                                 across all namespaces.
                                               type: string
-                                            service:
-                                              description: Service is an API call
-                                                to a JSON web service
-                                              properties:
-                                                caBundle:
-                                                  description: CABundle is a PEM encoded
-                                                    CA bundle which will be used to
-                                                    validate the server certificate.
-                                                  type: string
-                                                data:
-                                                  description: Data specifies the
-                                                    POST data sent to the server.
-                                                  items:
-                                                    description: RequestData contains
-                                                      the HTTP POST data
-                                                    properties:
-                                                      key:
-                                                        description: Key is a unique
-                                                          identifier for the data
-                                                          value
-                                                        type: string
-                                                      value:
-                                                        description: Value is the
-                                                          data value
-                                                        x-kubernetes-preserve-unknown-fields: true
-                                                    required:
-                                                    - key
-                                                    - value
-                                                    type: object
-                                                  type: array
-                                                requestType:
-                                                  default: GET
-                                                  description: Method is the HTTP
-                                                    request type (GET or POST).
-                                                  enum:
-                                                  - GET
-                                                  - POST
-                                                  type: string
-                                                urlPath:
-                                                  description: URL is the JSON web
-                                                    service URL. The typical format
-                                                    is `https://{service}.{namespace}:{port}/{path}`.
-                                                  type: string
-                                              required:
-                                              - requestType
-                                              - urlPath
-                                              type: object
                                             urlPath:
                                               description: URLPath is the URL path
                                                 to be used in the HTTP GET request
@@ -5926,6 +5091,8 @@ spec:
                                                 The format required is the same format
                                                 used by the `kubectl get --raw` command.
                                               type: string
+                                          required:
+                                          - urlPath
                                           type: object
                                         configMap:
                                           description: ConfigMap is the ConfigMap
@@ -6454,7 +5621,7 @@ spec:
                                   description: Version defines the Pod Security Standard
                                     versions that Kubernetes supports. Allowed values
                                     are v1.19, v1.20, v1.21, v1.22, v1.23, v1.24,
-                                    v1.25, v1.26, latest. Defaults to latest.
+                                    v1.25, latest. Defaults to latest.
                                   enum:
                                   - v1.19
                                   - v1.20
@@ -6463,7 +5630,6 @@ spec:
                                   - v1.23
                                   - v1.24
                                   - v1.25
-                                  - v1.26
                                   - latest
                                   type: string
                               type: object
@@ -7102,14 +6268,6 @@ spec:
                                   signing, for example an email address Deprecated.
                                   Use KeylessAttestor instead.
                                 type: string
-                              type:
-                                description: Type specifies the method of signature
-                                  validation. The allowed options are Cosign and NotaryV2.
-                                  By default Cosign is used if a type is not specified.
-                                enum:
-                                - Cosign
-                                - NotaryV2
-                                type: string
                               verifyDigest:
                                 default: true
                                 description: VerifyDigest validates that images have
@@ -7236,9 +6394,9 @@ spec:
       name: Failure Policy
       priority: 1
       type: string
-    - jsonPath: .status.conditions[?(@.type == "Ready")].status
+    - jsonPath: .status.ready
       name: Ready
-      type: string
+      type: boolean
     - jsonPath: .metadata.creationTimestamp
       name: Age
       type: date
@@ -7258,9 +6416,6 @@ spec:
       name: Verifyimages
       priority: 1
       type: integer
-    - jsonPath: .status.conditions[?(@.type == "Ready")].message
-      name: MESSAGE
-      type: string
     name: v2beta1
     schema:
       openAPIV3Schema:
@@ -7310,14 +6465,11 @@ spec:
                 - Ignore
                 - Fail
                 type: string
-              generateExisting:
-                description: GenerateExisting controls whether to trigger generate
-                  rule in existing resources If is set to "true" generate rule will
-                  be triggered and applied to existing matched resources. Defaults
-                  to "false" if not specified.
-                type: boolean
               generateExistingOnPolicyUpdate:
-                description: Deprecated, use generateExisting instead
+                description: GenerateExistingOnPolicyUpdate controls whether to trigger
+                  generate rule in existing resources If is set to "true" generate
+                  rule will be triggered and applied to existing matched resources.
+                  Defaults to "false" if not specified.
                 type: boolean
               mutateExistingOnPolicyUpdate:
                 description: MutateExistingOnPolicyUpdate controls if a mutateExisting
@@ -7341,63 +6493,19 @@ spec:
                           must be provided.
                         properties:
                           apiCall:
-                            description: APICall is an HTTP request to the Kubernetes
-                              API server, or other JSON web service. The data returned
-                              is stored in the context with the name for the context
-                              entry.
+                            description: APICall defines an HTTP request to the Kubernetes
+                              API server. The JSON data retrieved is stored in the
+                              context.
                             properties:
                               jmesPath:
                                 description: JMESPath is an optional JSON Match Expression
                                   that can be used to transform the JSON response
-                                  returned from the server. For example a JMESPath
+                                  returned from the API server. For example a JMESPath
                                   of "items | length(@)" applied to the API server
-                                  response for the URLPath "/apis/apps/v1/deployments"
+                                  response to the URLPath "/apis/apps/v1/deployments"
                                   will return the total count of deployments across
                                   all namespaces.
                                 type: string
-                              service:
-                                description: Service is an API call to a JSON web
-                                  service
-                                properties:
-                                  caBundle:
-                                    description: CABundle is a PEM encoded CA bundle
-                                      which will be used to validate the server certificate.
-                                    type: string
-                                  data:
-                                    description: Data specifies the POST data sent
-                                      to the server.
-                                    items:
-                                      description: RequestData contains the HTTP POST
-                                        data
-                                      properties:
-                                        key:
-                                          description: Key is a unique identifier
-                                            for the data value
-                                          type: string
-                                        value:
-                                          description: Value is the data value
-                                          x-kubernetes-preserve-unknown-fields: true
-                                      required:
-                                      - key
-                                      - value
-                                      type: object
-                                    type: array
-                                  requestType:
-                                    default: GET
-                                    description: Method is the HTTP request type (GET
-                                      or POST).
-                                    enum:
-                                    - GET
-                                    - POST
-                                    type: string
-                                  urlPath:
-                                    description: URL is the JSON web service URL.
-                                      The typical format is `https://{service}.{namespace}:{port}/{path}`.
-                                    type: string
-                                required:
-                                - requestType
-                                - urlPath
-                                type: object
                               urlPath:
                                 description: URLPath is the URL path to be used in
                                   the HTTP GET request to the Kubernetes API server
@@ -7405,6 +6513,8 @@ spec:
                                   The format required is the same format used by the
                                   `kubectl get --raw` command.
                                 type: string
+                            required:
+                            - urlPath
                             type: object
                           configMap:
                             description: ConfigMap is the ConfigMap reference.
@@ -7574,21 +6684,6 @@ spec:
                                       "*" (matches zero or many characters) and "?"
                                       (at least one character).
                                     items:
-                                      type: string
-                                    type: array
-                                  operations:
-                                    description: Operations can contain values ["CREATE,
-                                      "UPDATE", "CONNECT", "DELETE"], which are used
-                                      to match a specific action.
-                                    items:
-                                      description: AdmissionOperation can have one
-                                        of the values CREATE, UPDATE, CONNECT, DELETE,
-                                        which are used to match a specific action.
-                                      enum:
-                                      - CREATE
-                                      - CONNECT
-                                      - UPDATE
-                                      - DELETE
                                       type: string
                                     type: array
                                   selector:
@@ -7807,21 +6902,6 @@ spec:
                                       "*" (matches zero or many characters) and "?"
                                       (at least one character).
                                     items:
-                                      type: string
-                                    type: array
-                                  operations:
-                                    description: Operations can contain values ["CREATE,
-                                      "UPDATE", "CONNECT", "DELETE"], which are used
-                                      to match a specific action.
-                                    items:
-                                      description: AdmissionOperation can have one
-                                        of the values CREATE, UPDATE, CONNECT, DELETE,
-                                        which are used to match a specific action.
-                                      enum:
-                                      - CREATE
-                                      - CONNECT
-                                      - UPDATE
-                                      - DELETE
                                       type: string
                                     type: array
                                   selector:
@@ -8039,15 +7119,6 @@ spec:
                       additionalProperties:
                         items:
                           properties:
-                            jmesPath:
-                              description: 'JMESPath is an optional JMESPath expression
-                                to apply to the image value. This is useful when the
-                                extracted image begins with a prefix like ''docker://''.
-                                The ''trim_prefix'' function may be used to trim the
-                                prefix: trim_prefix(@, ''docker://''). Note - Image
-                                digest mutation may not be used when applying a JMESPAth
-                                to an image.'
-                              type: string
                             key:
                               description: Key is an optional name of the field within
                                 'path' that will be used to uniquely identify an image.
@@ -8196,21 +7267,6 @@ spec:
                                       "*" (matches zero or many characters) and "?"
                                       (at least one character).
                                     items:
-                                      type: string
-                                    type: array
-                                  operations:
-                                    description: Operations can contain values ["CREATE,
-                                      "UPDATE", "CONNECT", "DELETE"], which are used
-                                      to match a specific action.
-                                    items:
-                                      description: AdmissionOperation can have one
-                                        of the values CREATE, UPDATE, CONNECT, DELETE,
-                                        which are used to match a specific action.
-                                      enum:
-                                      - CREATE
-                                      - CONNECT
-                                      - UPDATE
-                                      - DELETE
                                       type: string
                                     type: array
                                   selector:
@@ -8431,21 +7487,6 @@ spec:
                                     items:
                                       type: string
                                     type: array
-                                  operations:
-                                    description: Operations can contain values ["CREATE,
-                                      "UPDATE", "CONNECT", "DELETE"], which are used
-                                      to match a specific action.
-                                    items:
-                                      description: AdmissionOperation can have one
-                                        of the values CREATE, UPDATE, CONNECT, DELETE,
-                                        which are used to match a specific action.
-                                      enum:
-                                      - CREATE
-                                      - CONNECT
-                                      - UPDATE
-                                      - DELETE
-                                      type: string
-                                    type: array
                                   selector:
                                     description: 'Selector is a label selector. Label
                                       keys and values in `matchLabels` support the
@@ -8560,9 +7601,9 @@ spec:
                             sub-elements by creating a context for each entry in the
                             list and looping over it to apply the specified logic.
                           items:
-                            description: ForEachMutation applies mutation rules to
-                              a list of sub-elements by creating a context for each
-                              entry in the list and looping over it to apply the specified
+                            description: ForEach applies mutation rules to a list
+                              of sub-elements by creating a context for each entry
+                              in the list and looping over it to apply the specified
                               logic.
                             properties:
                               context:
@@ -8574,66 +7615,20 @@ spec:
                                     reference or a APILookup must be provided.
                                   properties:
                                     apiCall:
-                                      description: APICall is an HTTP request to the
-                                        Kubernetes API server, or other JSON web service.
-                                        The data returned is stored in the context
-                                        with the name for the context entry.
+                                      description: APICall defines an HTTP request
+                                        to the Kubernetes API server. The JSON data
+                                        retrieved is stored in the context.
                                       properties:
                                         jmesPath:
                                           description: JMESPath is an optional JSON
                                             Match Expression that can be used to transform
-                                            the JSON response returned from the server.
-                                            For example a JMESPath of "items | length(@)"
-                                            applied to the API server response for
-                                            the URLPath "/apis/apps/v1/deployments"
+                                            the JSON response returned from the API
+                                            server. For example a JMESPath of "items
+                                            | length(@)" applied to the API server
+                                            response to the URLPath "/apis/apps/v1/deployments"
                                             will return the total count of deployments
                                             across all namespaces.
                                           type: string
-                                        service:
-                                          description: Service is an API call to a
-                                            JSON web service
-                                          properties:
-                                            caBundle:
-                                              description: CABundle is a PEM encoded
-                                                CA bundle which will be used to validate
-                                                the server certificate.
-                                              type: string
-                                            data:
-                                              description: Data specifies the POST
-                                                data sent to the server.
-                                              items:
-                                                description: RequestData contains
-                                                  the HTTP POST data
-                                                properties:
-                                                  key:
-                                                    description: Key is a unique identifier
-                                                      for the data value
-                                                    type: string
-                                                  value:
-                                                    description: Value is the data
-                                                      value
-                                                    x-kubernetes-preserve-unknown-fields: true
-                                                required:
-                                                - key
-                                                - value
-                                                type: object
-                                              type: array
-                                            requestType:
-                                              default: GET
-                                              description: Method is the HTTP request
-                                                type (GET or POST).
-                                              enum:
-                                              - GET
-                                              - POST
-                                              type: string
-                                            urlPath:
-                                              description: URL is the JSON web service
-                                                URL. The typical format is `https://{service}.{namespace}:{port}/{path}`.
-                                              type: string
-                                          required:
-                                          - requestType
-                                          - urlPath
-                                          type: object
                                         urlPath:
                                           description: URLPath is the URL path to
                                             be used in the HTTP GET request to the
@@ -8642,6 +7637,8 @@ spec:
                                             format required is the same format used
                                             by the `kubectl get --raw` command.
                                           type: string
+                                      required:
+                                      - urlPath
                                       type: object
                                     configMap:
                                       description: ConfigMap is the ConfigMap reference.
@@ -8840,147 +7837,10 @@ spec:
                           description: Targets defines the target resources to be
                             mutated.
                           items:
-                            description: TargetResourceSpec defines targets for mutating
-                              existing resources.
                             properties:
                               apiVersion:
                                 description: APIVersion specifies resource apiVersion.
                                 type: string
-                              context:
-                                description: Context defines variables and data sources
-                                  that can be used during rule execution.
-                                items:
-                                  description: ContextEntry adds variables and data
-                                    sources to a rule Context. Either a ConfigMap
-                                    reference or a APILookup must be provided.
-                                  properties:
-                                    apiCall:
-                                      description: APICall is an HTTP request to the
-                                        Kubernetes API server, or other JSON web service.
-                                        The data returned is stored in the context
-                                        with the name for the context entry.
-                                      properties:
-                                        jmesPath:
-                                          description: JMESPath is an optional JSON
-                                            Match Expression that can be used to transform
-                                            the JSON response returned from the server.
-                                            For example a JMESPath of "items | length(@)"
-                                            applied to the API server response for
-                                            the URLPath "/apis/apps/v1/deployments"
-                                            will return the total count of deployments
-                                            across all namespaces.
-                                          type: string
-                                        service:
-                                          description: Service is an API call to a
-                                            JSON web service
-                                          properties:
-                                            caBundle:
-                                              description: CABundle is a PEM encoded
-                                                CA bundle which will be used to validate
-                                                the server certificate.
-                                              type: string
-                                            data:
-                                              description: Data specifies the POST
-                                                data sent to the server.
-                                              items:
-                                                description: RequestData contains
-                                                  the HTTP POST data
-                                                properties:
-                                                  key:
-                                                    description: Key is a unique identifier
-                                                      for the data value
-                                                    type: string
-                                                  value:
-                                                    description: Value is the data
-                                                      value
-                                                    x-kubernetes-preserve-unknown-fields: true
-                                                required:
-                                                - key
-                                                - value
-                                                type: object
-                                              type: array
-                                            requestType:
-                                              default: GET
-                                              description: Method is the HTTP request
-                                                type (GET or POST).
-                                              enum:
-                                              - GET
-                                              - POST
-                                              type: string
-                                            urlPath:
-                                              description: URL is the JSON web service
-                                                URL. The typical format is `https://{service}.{namespace}:{port}/{path}`.
-                                              type: string
-                                          required:
-                                          - requestType
-                                          - urlPath
-                                          type: object
-                                        urlPath:
-                                          description: URLPath is the URL path to
-                                            be used in the HTTP GET request to the
-                                            Kubernetes API server (e.g. "/api/v1/namespaces"
-                                            or  "/apis/apps/v1/deployments"). The
-                                            format required is the same format used
-                                            by the `kubectl get --raw` command.
-                                          type: string
-                                      type: object
-                                    configMap:
-                                      description: ConfigMap is the ConfigMap reference.
-                                      properties:
-                                        name:
-                                          description: Name is the ConfigMap name.
-                                          type: string
-                                        namespace:
-                                          description: Namespace is the ConfigMap
-                                            namespace.
-                                          type: string
-                                      required:
-                                      - name
-                                      type: object
-                                    imageRegistry:
-                                      description: ImageRegistry defines requests
-                                        to an OCI/Docker V2 registry to fetch image
-                                        details.
-                                      properties:
-                                        jmesPath:
-                                          description: JMESPath is an optional JSON
-                                            Match Expression that can be used to transform
-                                            the ImageData struct returned as a result
-                                            of processing the image reference.
-                                          type: string
-                                        reference:
-                                          description: 'Reference is image reference
-                                            to a container image in the registry.
-                                            Example: ghcr.io/kyverno/kyverno:latest'
-                                          type: string
-                                      required:
-                                      - reference
-                                      type: object
-                                    name:
-                                      description: Name is the variable name.
-                                      type: string
-                                    variable:
-                                      description: Variable defines an arbitrary JMESPath
-                                        context variable that can be defined inline.
-                                      properties:
-                                        default:
-                                          description: Default is an optional arbitrary
-                                            JSON object that the variable may take
-                                            if the JMESPath expression evaluates to
-                                            nil
-                                          x-kubernetes-preserve-unknown-fields: true
-                                        jmesPath:
-                                          description: JMESPath is an optional JMESPath
-                                            Expression that can be used to transform
-                                            the variable.
-                                          type: string
-                                        value:
-                                          description: Value is any arbitrary JSON
-                                            object representable in YAML or JSON form.
-                                          x-kubernetes-preserve-unknown-fields: true
-                                      type: object
-                                  type: object
-                                type: array
                               kind:
                                 description: Kind specifies resource kind.
                                 type: string
@@ -8990,15 +7850,6 @@ spec:
                               namespace:
                                 description: Namespace specifies resource namespace.
                                 type: string
-                              preconditions:
-                                description: 'Preconditions are used to determine
-                                  if a policy rule should be applied by evaluating
-                                  a set of conditions. The declaration can contain
-                                  nested `any` or `all` statements. A direct list
-                                  of conditions (without `any` or `all` statements
-                                  is supported for backwards compatibility but will
-                                  be deprecated in the next major release. See: https://kyverno.io/docs/writing-policies/preconditions/'
-                                x-kubernetes-preserve-unknown-fields: true
                             type: object
                           type: array
                       type: object
@@ -9208,10 +8059,10 @@ spec:
                             sub-elements by creating a context for each entry in the
                             list and looping over it to apply the specified logic.
                           items:
-                            description: ForEachValidation applies validate rules
-                              to a list of sub-elements by creating a context for
-                              each entry in the list and looping over it to apply
-                              the specified logic.
+                            description: ForEach applies validate rules to a list
+                              of sub-elements by creating a context for each entry
+                              in the list and looping over it to apply the specified
+                              logic.
                             properties:
                               anyPattern:
                                 description: AnyPattern specifies list of validation
@@ -9227,66 +8078,20 @@ spec:
                                     reference or a APILookup must be provided.
                                   properties:
                                     apiCall:
-                                      description: APICall is an HTTP request to the
-                                        Kubernetes API server, or other JSON web service.
-                                        The data returned is stored in the context
-                                        with the name for the context entry.
+                                      description: APICall defines an HTTP request
+                                        to the Kubernetes API server. The JSON data
+                                        retrieved is stored in the context.
                                       properties:
                                         jmesPath:
                                           description: JMESPath is an optional JSON
                                             Match Expression that can be used to transform
-                                            the JSON response returned from the server.
-                                            For example a JMESPath of "items | length(@)"
-                                            applied to the API server response for
-                                            the URLPath "/apis/apps/v1/deployments"
+                                            the JSON response returned from the API
+                                            server. For example a JMESPath of "items
+                                            | length(@)" applied to the API server
+                                            response to the URLPath "/apis/apps/v1/deployments"
                                             will return the total count of deployments
                                             across all namespaces.
                                           type: string
-                                        service:
-                                          description: Service is an API call to a
-                                            JSON web service
-                                          properties:
-                                            caBundle:
-                                              description: CABundle is a PEM encoded
-                                                CA bundle which will be used to validate
-                                                the server certificate.
-                                              type: string
-                                            data:
-                                              description: Data specifies the POST
-                                                data sent to the server.
-                                              items:
-                                                description: RequestData contains
-                                                  the HTTP POST data
-                                                properties:
-                                                  key:
-                                                    description: Key is a unique identifier
-                                                      for the data value
-                                                    type: string
-                                                  value:
-                                                    description: Value is the data
-                                                      value
-                                                    x-kubernetes-preserve-unknown-fields: true
-                                                required:
-                                                - key
-                                                - value
-                                                type: object
-                                              type: array
-                                            requestType:
-                                              default: GET
-                                              description: Method is the HTTP request
-                                                type (GET or POST).
-                                              enum:
-                                              - GET
-                                              - POST
-                                              type: string
-                                            urlPath:
-                                              description: URL is the JSON web service
-                                                URL. The typical format is `https://{service}.{namespace}:{port}/{path}`.
-                                              type: string
-                                          required:
-                                          - requestType
-                                          - urlPath
-                                          type: object
                                         urlPath:
                                           description: URLPath is the URL path to
                                             be used in the HTTP GET request to the
@@ -9295,6 +8100,8 @@ spec:
                                             format required is the same format used
                                             by the `kubectl get --raw` command.
                                           type: string
+                                      required:
+                                      - urlPath
                                       type: object
                                     configMap:
                                       description: ConfigMap is the ConfigMap reference.
@@ -9803,7 +8610,7 @@ spec:
                               description: Version defines the Pod Security Standard
                                 versions that Kubernetes supports. Allowed values
                                 are v1.19, v1.20, v1.21, v1.22, v1.23, v1.24, v1.25,
-                                v1.26, latest. Defaults to latest.
+                                latest. Defaults to latest.
                               enum:
                               - v1.19
                               - v1.20
@@ -9812,7 +8619,6 @@ spec:
                               - v1.23
                               - v1.24
                               - v1.25
-                              - v1.26
                               - latest
                               type: string
                           type: object
@@ -10381,14 +9187,6 @@ spec:
                               i.e. have matched passed a signature or attestation
                               check.
                             type: boolean
-                          type:
-                            description: Type specifies the method of signature validation.
-                              The allowed options are Cosign and NotaryV2. By default
-                              Cosign is used if a type is not specified.
-                            enum:
-                            - Cosign
-                            - NotaryV2
-                            type: string
                           verifyDigest:
                             default: true
                             description: VerifyDigest validates that images have a
@@ -10431,54 +9229,6 @@ spec:
                       - Audit
                       - Enforce
                       type: string
-                    namespaceSelector:
-                      description: A label selector is a label query over a set of
-                        resources. The result of matchLabels and matchExpressions
-                        are ANDed. An empty label selector matches all objects. A
-                        null label selector matches no objects.
-                      properties:
-                        matchExpressions:
-                          description: matchExpressions is a list of label selector
-                            requirements. The requirements are ANDed.
-                          items:
-                            description: A label selector requirement is a selector
-                              that contains values, a key, and an operator that relates
-                              the key and values.
-                            properties:
-                              key:
-                                description: key is the label key that the selector
-                                  applies to.
-                                type: string
-                              operator:
-                                description: operator represents a key's relationship
-                                  to a set of values. Valid operators are In, NotIn,
-                                  Exists and DoesNotExist.
-                                type: string
-                              values:
-                                description: values is an array of string values.
-                                  If the operator is In or NotIn, the values array
-                                  must be non-empty. If the operator is Exists or
-                                  DoesNotExist, the values array must be empty. This
-                                  array is replaced during a strategic merge patch.
-                                items:
-                                  type: string
-                                type: array
-                            required:
-                            - key
-                            - operator
-                            type: object
-                          type: array
-                        matchLabels:
-                          additionalProperties:
-                            type: string
-                          description: matchLabels is a map of {key,value} pairs.
-                            A single {key,value} in the matchLabels map is equivalent
-                            to an element of matchExpressions, whose key field is
-                            "key", the operator is "In", and the values array contains
-                            only "value". The requirements are ANDed.
-                          type: object
-                      type: object
-                      x-kubernetes-map-type: atomic
                     namespaces:
                       items:
                         type: string
@@ -10518,64 +9268,19 @@ spec:
                               APILookup must be provided.
                             properties:
                               apiCall:
-                                description: APICall is an HTTP request to the Kubernetes
-                                  API server, or other JSON web service. The data
-                                  returned is stored in the context with the name
-                                  for the context entry.
+                                description: APICall defines an HTTP request to the
+                                  Kubernetes API server. The JSON data retrieved is
+                                  stored in the context.
                                 properties:
                                   jmesPath:
                                     description: JMESPath is an optional JSON Match
                                       Expression that can be used to transform the
-                                      JSON response returned from the server. For
-                                      example a JMESPath of "items | length(@)" applied
-                                      to the API server response for the URLPath "/apis/apps/v1/deployments"
-                                      will return the total count of deployments across
-                                      all namespaces.
+                                      JSON response returned from the API server.
+                                      For example a JMESPath of "items | length(@)"
+                                      applied to the API server response to the URLPath
+                                      "/apis/apps/v1/deployments" will return the
+                                      total count of deployments across all namespaces.
                                     type: string
-                                  service:
-                                    description: Service is an API call to a JSON
-                                      web service
-                                    properties:
-                                      caBundle:
-                                        description: CABundle is a PEM encoded CA
-                                          bundle which will be used to validate the
-                                          server certificate.
-                                        type: string
-                                      data:
-                                        description: Data specifies the POST data
-                                          sent to the server.
-                                        items:
-                                          description: RequestData contains the HTTP
-                                            POST data
-                                          properties:
-                                            key:
-                                              description: Key is a unique identifier
-                                                for the data value
-                                              type: string
-                                            value:
-                                              description: Value is the data value
-                                              x-kubernetes-preserve-unknown-fields: true
-                                          required:
-                                          - key
-                                          - value
-                                          type: object
-                                        type: array
-                                      requestType:
-                                        default: GET
-                                        description: Method is the HTTP request type
-                                          (GET or POST).
-                                        enum:
-                                        - GET
-                                        - POST
-                                        type: string
-                                      urlPath:
-                                        description: URL is the JSON web service URL.
-                                          The typical format is `https://{service}.{namespace}:{port}/{path}`.
-                                        type: string
-                                    required:
-                                    - requestType
-                                    - urlPath
-                                    type: object
                                   urlPath:
                                     description: URLPath is the URL path to be used
                                       in the HTTP GET request to the Kubernetes API
@@ -10583,6 +9288,8 @@ spec:
                                       The format required is the same format used
                                       by the `kubectl get --raw` command.
                                     type: string
+                                required:
+                                - urlPath
                                 type: object
                               configMap:
                                 description: ConfigMap is the ConfigMap reference.
@@ -10758,22 +9465,6 @@ spec:
                                           "*" (matches zero or many characters) and
                                           "?" (at least one character).
                                         items:
-                                          type: string
-                                        type: array
-                                      operations:
-                                        description: Operations can contain values
-                                          ["CREATE, "UPDATE", "CONNECT", "DELETE"],
-                                          which are used to match a specific action.
-                                        items:
-                                          description: AdmissionOperation can have
-                                            one of the values CREATE, UPDATE, CONNECT,
-                                            DELETE, which are used to match a specific
-                                            action.
-                                          enum:
-                                          - CREATE
-                                          - CONNECT
-                                          - UPDATE
-                                          - DELETE
                                           type: string
                                         type: array
                                       selector:
@@ -11001,22 +9692,6 @@ spec:
                                         items:
                                           type: string
                                         type: array
-                                      operations:
-                                        description: Operations can contain values
-                                          ["CREATE, "UPDATE", "CONNECT", "DELETE"],
-                                          which are used to match a specific action.
-                                        items:
-                                          description: AdmissionOperation can have
-                                            one of the values CREATE, UPDATE, CONNECT,
-                                            DELETE, which are used to match a specific
-                                            action.
-                                          enum:
-                                          - CREATE
-                                          - CONNECT
-                                          - UPDATE
-                                          - DELETE
-                                          type: string
-                                        type: array
                                       selector:
                                         description: 'Selector is a label selector.
                                           Label keys and values in `matchLabels` support
@@ -11234,21 +9909,6 @@ spec:
                                     "*" (matches zero or many characters) and "?"
                                     (at least one character).
                                   items:
-                                    type: string
-                                  type: array
-                                operations:
-                                  description: Operations can contain values ["CREATE,
-                                    "UPDATE", "CONNECT", "DELETE"], which are used
-                                    to match a specific action.
-                                  items:
-                                    description: AdmissionOperation can have one of
-                                      the values CREATE, UPDATE, CONNECT, DELETE,
-                                      which are used to match a specific action.
-                                    enum:
-                                    - CREATE
-                                    - CONNECT
-                                    - UPDATE
-                                    - DELETE
                                     type: string
                                   type: array
                                 selector:
@@ -11471,15 +10131,6 @@ spec:
                           additionalProperties:
                             items:
                               properties:
-                                jmesPath:
-                                  description: 'JMESPath is an optional JMESPath expression
-                                    to apply to the image value. This is useful when
-                                    the extracted image begins with a prefix like
-                                    ''docker://''. The ''trim_prefix'' function may
-                                    be used to trim the prefix: trim_prefix(@, ''docker://'').
-                                    Note - Image digest mutation may not be used when
-                                    applying a JMESPAth to an image.'
-                                  type: string
                                 key:
                                   description: Key is an optional name of the field
                                     within 'path' that will be used to uniquely identify
@@ -11631,22 +10282,6 @@ spec:
                                           "*" (matches zero or many characters) and
                                           "?" (at least one character).
                                         items:
-                                          type: string
-                                        type: array
-                                      operations:
-                                        description: Operations can contain values
-                                          ["CREATE, "UPDATE", "CONNECT", "DELETE"],
-                                          which are used to match a specific action.
-                                        items:
-                                          description: AdmissionOperation can have
-                                            one of the values CREATE, UPDATE, CONNECT,
-                                            DELETE, which are used to match a specific
-                                            action.
-                                          enum:
-                                          - CREATE
-                                          - CONNECT
-                                          - UPDATE
-                                          - DELETE
                                           type: string
                                         type: array
                                       selector:
@@ -11874,22 +10509,6 @@ spec:
                                         items:
                                           type: string
                                         type: array
-                                      operations:
-                                        description: Operations can contain values
-                                          ["CREATE, "UPDATE", "CONNECT", "DELETE"],
-                                          which are used to match a specific action.
-                                        items:
-                                          description: AdmissionOperation can have
-                                            one of the values CREATE, UPDATE, CONNECT,
-                                            DELETE, which are used to match a specific
-                                            action.
-                                          enum:
-                                          - CREATE
-                                          - CONNECT
-                                          - UPDATE
-                                          - DELETE
-                                          type: string
-                                        type: array
                                       selector:
                                         description: 'Selector is a label selector.
                                           Label keys and values in `matchLabels` support
@@ -12109,21 +10728,6 @@ spec:
                                   items:
                                     type: string
                                   type: array
-                                operations:
-                                  description: Operations can contain values ["CREATE,
-                                    "UPDATE", "CONNECT", "DELETE"], which are used
-                                    to match a specific action.
-                                  items:
-                                    description: AdmissionOperation can have one of
-                                      the values CREATE, UPDATE, CONNECT, DELETE,
-                                      which are used to match a specific action.
-                                    enum:
-                                    - CREATE
-                                    - CONNECT
-                                    - UPDATE
-                                    - DELETE
-                                    type: string
-                                  type: array
                                 selector:
                                   description: 'Selector is a label selector. Label
                                     keys and values in `matchLabels` support the wildcard
@@ -12236,10 +10840,10 @@ spec:
                                 in the list and looping over it to apply the specified
                                 logic.
                               items:
-                                description: ForEachMutation applies mutation rules
-                                  to a list of sub-elements by creating a context
-                                  for each entry in the list and looping over it to
-                                  apply the specified logic.
+                                description: ForEach applies mutation rules to a list
+                                  of sub-elements by creating a context for each entry
+                                  in the list and looping over it to apply the specified
+                                  logic.
                                 properties:
                                   context:
                                     description: Context defines variables and data
@@ -12250,70 +10854,21 @@ spec:
                                         reference or a APILookup must be provided.
                                       properties:
                                         apiCall:
-                                          description: APICall is an HTTP request
-                                            to the Kubernetes API server, or other
-                                            JSON web service. The data returned is
-                                            stored in the context with the name for
-                                            the context entry.
+                                          description: APICall defines an HTTP request
+                                            to the Kubernetes API server. The JSON
+                                            data retrieved is stored in the context.
                                           properties:
                                             jmesPath:
                                               description: JMESPath is an optional
                                                 JSON Match Expression that can be
                                                 used to transform the JSON response
-                                                returned from the server. For example
-                                                a JMESPath of "items | length(@)"
+                                                returned from the API server. For
+                                                example a JMESPath of "items | length(@)"
                                                 applied to the API server response
-                                                for the URLPath "/apis/apps/v1/deployments"
+                                                to the URLPath "/apis/apps/v1/deployments"
                                                 will return the total count of deployments
                                                 across all namespaces.
                                               type: string
-                                            service:
-                                              description: Service is an API call
-                                                to a JSON web service
-                                              properties:
-                                                caBundle:
-                                                  description: CABundle is a PEM encoded
-                                                    CA bundle which will be used to
-                                                    validate the server certificate.
-                                                  type: string
-                                                data:
-                                                  description: Data specifies the
-                                                    POST data sent to the server.
-                                                  items:
-                                                    description: RequestData contains
-                                                      the HTTP POST data
-                                                    properties:
-                                                      key:
-                                                        description: Key is a unique
-                                                          identifier for the data
-                                                          value
-                                                        type: string
-                                                      value:
-                                                        description: Value is the
-                                                          data value
-                                                        x-kubernetes-preserve-unknown-fields: true
-                                                    required:
-                                                    - key
-                                                    - value
-                                                    type: object
-                                                  type: array
-                                                requestType:
-                                                  default: GET
-                                                  description: Method is the HTTP
-                                                    request type (GET or POST).
-                                                  enum:
-                                                  - GET
-                                                  - POST
-                                                  type: string
-                                                urlPath:
-                                                  description: URL is the JSON web
-                                                    service URL. The typical format
-                                                    is `https://{service}.{namespace}:{port}/{path}`.
-                                                  type: string
-                                              required:
-                                              - requestType
-                                              - urlPath
-                                              type: object
                                             urlPath:
                                               description: URLPath is the URL path
                                                 to be used in the HTTP GET request
@@ -12322,6 +10877,8 @@ spec:
                                                 The format required is the same format
                                                 used by the `kubectl get --raw` command.
                                               type: string
+                                          required:
+                                          - urlPath
                                           type: object
                                         configMap:
                                           description: ConfigMap is the ConfigMap
@@ -12530,155 +11087,10 @@ spec:
                               description: Targets defines the target resources to
                                 be mutated.
                               items:
-                                description: TargetResourceSpec defines targets for
-                                  mutating existing resources.
                                 properties:
                                   apiVersion:
                                     description: APIVersion specifies resource apiVersion.
                                     type: string
-                                  context:
-                                    description: Context defines variables and data
-                                      sources that can be used during rule execution.
-                                    items:
-                                      description: ContextEntry adds variables and
-                                        data sources to a rule Context. Either a ConfigMap
-                                        reference or a APILookup must be provided.
-                                      properties:
-                                        apiCall:
-                                          description: APICall is an HTTP request
-                                            to the Kubernetes API server, or other
-                                            JSON web service. The data returned is
-                                            stored in the context with the name for
-                                            the context entry.
-                                          properties:
-                                            jmesPath:
-                                              description: JMESPath is an optional
-                                                JSON Match Expression that can be
-                                                used to transform the JSON response
-                                                returned from the server. For example
-                                                a JMESPath of "items | length(@)"
-                                                applied to the API server response
-                                                for the URLPath "/apis/apps/v1/deployments"
-                                                will return the total count of deployments
-                                                across all namespaces.
-                                              type: string
-                                            service:
-                                              description: Service is an API call
-                                                to a JSON web service
-                                              properties:
-                                                caBundle:
-                                                  description: CABundle is a PEM encoded
-                                                    CA bundle which will be used to
-                                                    validate the server certificate.
-                                                  type: string
-                                                data:
-                                                  description: Data specifies the
-                                                    POST data sent to the server.
-                                                  items:
-                                                    description: RequestData contains
-                                                      the HTTP POST data
-                                                    properties:
-                                                      key:
-                                                        description: Key is a unique
-                                                          identifier for the data
-                                                          value
-                                                        type: string
-                                                      value:
-                                                        description: Value is the
-                                                          data value
-                                                        x-kubernetes-preserve-unknown-fields: true
-                                                    required:
-                                                    - key
-                                                    - value
-                                                    type: object
-                                                  type: array
-                                                requestType:
-                                                  default: GET
-                                                  description: Method is the HTTP
-                                                    request type (GET or POST).
-                                                  enum:
-                                                  - GET
-                                                  - POST
-                                                  type: string
-                                                urlPath:
-                                                  description: URL is the JSON web
-                                                    service URL. The typical format
-                                                    is `https://{service}.{namespace}:{port}/{path}`.
-                                                  type: string
-                                              required:
-                                              - requestType
-                                              - urlPath
-                                              type: object
-                                            urlPath:
-                                              description: URLPath is the URL path
-                                                to be used in the HTTP GET request
-                                                to the Kubernetes API server (e.g.
-                                                "/api/v1/namespaces" or  "/apis/apps/v1/deployments").
-                                                The format required is the same format
-                                                used by the `kubectl get --raw` command.
-                                              type: string
-                                          type: object
-                                        configMap:
-                                          description: ConfigMap is the ConfigMap
-                                            reference.
-                                          properties:
-                                            name:
-                                              description: Name is the ConfigMap name.
-                                              type: string
-                                            namespace:
-                                              description: Namespace is the ConfigMap
-                                                namespace.
-                                              type: string
-                                          required:
-                                          - name
-                                          type: object
-                                        imageRegistry:
-                                          description: ImageRegistry defines requests
-                                            to an OCI/Docker V2 registry to fetch
-                                            image details.
-                                          properties:
-                                            jmesPath:
-                                              description: JMESPath is an optional
-                                                JSON Match Expression that can be
-                                                used to transform the ImageData struct
-                                                returned as a result of processing
-                                                the image reference.
-                                              type: string
-                                            reference:
-                                              description: 'Reference is image reference
-                                                to a container image in the registry.
-                                                Example: ghcr.io/kyverno/kyverno:latest'
-                                              type: string
-                                          required:
-                                          - reference
-                                          type: object
-                                        name:
-                                          description: Name is the variable name.
-                                          type: string
-                                        variable:
-                                          description: Variable defines an arbitrary
-                                            JMESPath context variable that can be
-                                            defined inline.
-                                          properties:
-                                            default:
-                                              description: Default is an optional
-                                                arbitrary JSON object that the variable
-                                                may take if the JMESPath expression
-                                                evaluates to nil
-                                              x-kubernetes-preserve-unknown-fields: true
-                                            jmesPath:
-                                              description: JMESPath is an optional
-                                                JMESPath Expression that can be used
-                                                to transform the variable.
-                                              type: string
-                                            value:
-                                              description: Value is any arbitrary
-                                                JSON object representable in YAML
-                                                or JSON form.
-                                              x-kubernetes-preserve-unknown-fields: true
-                                          type: object
-                                      type: object
-                                    type: array
                                   kind:
                                     description: Kind specifies resource kind.
                                     type: string
@@ -12688,16 +11100,6 @@ spec:
                                   namespace:
                                     description: Namespace specifies resource namespace.
                                     type: string
-                                  preconditions:
-                                    description: 'Preconditions are used to determine
-                                      if a policy rule should be applied by evaluating
-                                      a set of conditions. The declaration can contain
-                                      nested `any` or `all` statements. A direct list
-                                      of conditions (without `any` or `all` statements
-                                      is supported for backwards compatibility but
-                                      will be deprecated in the next major release.
-                                      See: https://kyverno.io/docs/writing-policies/preconditions/'
-                                    x-kubernetes-preserve-unknown-fields: true
                                 type: object
                               type: array
                           type: object
@@ -12741,10 +11143,10 @@ spec:
                                 in the list and looping over it to apply the specified
                                 logic.
                               items:
-                                description: ForEachValidation applies validate rules
-                                  to a list of sub-elements by creating a context
-                                  for each entry in the list and looping over it to
-                                  apply the specified logic.
+                                description: ForEach applies validate rules to a list
+                                  of sub-elements by creating a context for each entry
+                                  in the list and looping over it to apply the specified
+                                  logic.
                                 properties:
                                   anyPattern:
                                     description: AnyPattern specifies list of validation
@@ -12760,70 +11162,21 @@ spec:
                                         reference or a APILookup must be provided.
                                       properties:
                                         apiCall:
-                                          description: APICall is an HTTP request
-                                            to the Kubernetes API server, or other
-                                            JSON web service. The data returned is
-                                            stored in the context with the name for
-                                            the context entry.
+                                          description: APICall defines an HTTP request
+                                            to the Kubernetes API server. The JSON
+                                            data retrieved is stored in the context.
                                           properties:
                                             jmesPath:
                                               description: JMESPath is an optional
                                                 JSON Match Expression that can be
                                                 used to transform the JSON response
-                                                returned from the server. For example
-                                                a JMESPath of "items | length(@)"
+                                                returned from the API server. For
+                                                example a JMESPath of "items | length(@)"
                                                 applied to the API server response
-                                                for the URLPath "/apis/apps/v1/deployments"
+                                                to the URLPath "/apis/apps/v1/deployments"
                                                 will return the total count of deployments
                                                 across all namespaces.
                                               type: string
-                                            service:
-                                              description: Service is an API call
-                                                to a JSON web service
-                                              properties:
-                                                caBundle:
-                                                  description: CABundle is a PEM encoded
-                                                    CA bundle which will be used to
-                                                    validate the server certificate.
-                                                  type: string
-                                                data:
-                                                  description: Data specifies the
-                                                    POST data sent to the server.
-                                                  items:
-                                                    description: RequestData contains
-                                                      the HTTP POST data
-                                                    properties:
-                                                      key:
-                                                        description: Key is a unique
-                                                          identifier for the data
-                                                          value
-                                                        type: string
-                                                      value:
-                                                        description: Value is the
-                                                          data value
-                                                        x-kubernetes-preserve-unknown-fields: true
-                                                    required:
-                                                    - key
-                                                    - value
-                                                    type: object
-                                                  type: array
-                                                requestType:
-                                                  default: GET
-                                                  description: Method is the HTTP
-                                                    request type (GET or POST).
-                                                  enum:
-                                                  - GET
-                                                  - POST
-                                                  type: string
-                                                urlPath:
-                                                  description: URL is the JSON web
-                                                    service URL. The typical format
-                                                    is `https://{service}.{namespace}:{port}/{path}`.
-                                                  type: string
-                                              required:
-                                              - requestType
-                                              - urlPath
-                                              type: object
                                             urlPath:
                                               description: URLPath is the URL path
                                                 to be used in the HTTP GET request
@@ -12832,6 +11185,8 @@ spec:
                                                 The format required is the same format
                                                 used by the `kubectl get --raw` command.
                                               type: string
+                                          required:
+                                          - urlPath
                                           type: object
                                         configMap:
                                           description: ConfigMap is the ConfigMap
@@ -13360,7 +11715,7 @@ spec:
                                   description: Version defines the Pod Security Standard
                                     versions that Kubernetes supports. Allowed values
                                     are v1.19, v1.20, v1.21, v1.22, v1.23, v1.24,
-                                    v1.25, v1.26, latest. Defaults to latest.
+                                    v1.25, latest. Defaults to latest.
                                   enum:
                                   - v1.19
                                   - v1.20
@@ -13369,7 +11724,6 @@ spec:
                                   - v1.23
                                   - v1.24
                                   - v1.25
-                                  - v1.26
                                   - latest
                                   type: string
                               type: object
@@ -14007,14 +12361,6 @@ spec:
                                 description: Subject is the identity used for keyless
                                   signing, for example an email address Deprecated.
                                   Use KeylessAttestor instead.
-                                type: string
-                              type:
-                                description: Type specifies the method of signature
-                                  validation. The allowed options are Cosign and NotaryV2.
-                                  By default Cosign is used if a type is not specified.
-                                enum:
-                                - Cosign
-                                - NotaryV2
                                 type: string
                               verifyDigest:
                                 default: true

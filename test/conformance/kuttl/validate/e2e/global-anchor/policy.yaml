@@ -3,7 +3,7 @@ kind: ClusterPolicy
 metadata:
   name: sample
 spec:
-  validationFailureAction: Enforce
+  validationFailureAction: enforce
   rules:
   - name: check-container-image
     match:

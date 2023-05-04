@@ -17,9 +17,10 @@ limitations under the License.
 package v2alpha1
 
 import (
+	"reflect"
+
 	kyvernov1 "github.com/kyverno/kyverno/api/kyverno/v1"
 	kyvernov2beta1 "github.com/kyverno/kyverno/api/kyverno/v2beta1"
-	datautils "github.com/kyverno/kyverno/pkg/utils/data"
 	"github.com/robfig/cron"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
@@ -209,14 +210,14 @@ func (spec *CleanupPolicySpec) ValidateMatchExcludeConflict(path *field.Path) (e
 	if len(spec.MatchResources.Any) > 0 && len(spec.ExcludeResources.Any) > 0 {
 		for _, rmr := range spec.MatchResources.Any {
 			for _, rer := range spec.ExcludeResources.Any {
-				if datautils.DeepEqual(rmr, rer) {
+				if reflect.DeepEqual(rmr, rer) {
 					return append(errs, field.Invalid(path, spec, "CleanupPolicy is matching an empty set"))
 				}
 			}
 		}
 		return errs
 	}
-	if datautils.DeepEqual(spec.ExcludeResources, &kyvernov2beta1.MatchResources{}) {
+	if reflect.DeepEqual(spec.ExcludeResources, kyvernov2beta1.MatchResources{}) {
 		return errs
 	}
 	return append(errs, field.Invalid(path, spec, "CleanupPolicy is matching an empty set"))

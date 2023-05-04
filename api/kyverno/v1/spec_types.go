@@ -4,7 +4,6 @@ import (
 	"fmt"
 
 	"github.com/kyverno/kyverno/pkg/toggle"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/validation/field"
 )
@@ -14,35 +13,25 @@ type ValidationFailureAction string
 
 // Policy Reporting Modes
 const (
-	// auditOld doesn't block the request on failure
-	// DEPRECATED: use Audit instead
-	auditOld ValidationFailureAction = "audit"
 	// enforceOld blocks the request on failure
-	// DEPRECATED: use Enforce instead
+	// DEPRECATED: use enforce instead
 	enforceOld ValidationFailureAction = "enforce"
-	// Enforce blocks the request on failure
-	Enforce ValidationFailureAction = "Enforce"
-	// Audit doesn't block the request on failure
-	Audit ValidationFailureAction = "Audit"
+	// enforce blocks the request on failure
+	enforce ValidationFailureAction = "Enforce"
 )
 
 func (a ValidationFailureAction) Enforce() bool {
-	return a == Enforce || a == enforceOld
+	return a == enforce || a == enforceOld
 }
 
 func (a ValidationFailureAction) Audit() bool {
 	return !a.Enforce()
 }
 
-func (a ValidationFailureAction) IsValid() bool {
-	return a == enforceOld || a == auditOld || a == Enforce || a == Audit
-}
-
 type ValidationFailureActionOverride struct {
 	// +kubebuilder:validation:Enum=audit;enforce;Audit;Enforce
-	Action            ValidationFailureAction `json:"action,omitempty" yaml:"action,omitempty"`
-	Namespaces        []string                `json:"namespaces,omitempty" yaml:"namespaces,omitempty"`
-	NamespaceSelector *metav1.LabelSelector   `json:"namespaceSelector,omitempty" yaml:"namespaceSelector,omitempty"`
+	Action     ValidationFailureAction `json:"action,omitempty" yaml:"action,omitempty"`
+	Namespaces []string                `json:"namespaces,omitempty" yaml:"namespaces,omitempty"`
 }
 
 // Spec contains a list of Rule instances and other policy controls.
@@ -101,15 +90,11 @@ type Spec struct {
 	// +optional
 	MutateExistingOnPolicyUpdate bool `json:"mutateExistingOnPolicyUpdate,omitempty" yaml:"mutateExistingOnPolicyUpdate,omitempty"`
 
-	// Deprecated, use generateExisting instead
-	// +optional
-	GenerateExistingOnPolicyUpdate *bool `json:"generateExistingOnPolicyUpdate,omitempty" yaml:"generateExistingOnPolicyUpdate,omitempty"`
-
-	// GenerateExisting controls whether to trigger generate rule in existing resources
+	// GenerateExistingOnPolicyUpdate controls whether to trigger generate rule in existing resources
 	// If is set to "true" generate rule will be triggered and applied to existing matched resources.
 	// Defaults to "false" if not specified.
 	// +optional
-	GenerateExisting bool `json:"generateExisting,omitempty" yaml:"generateExisting,omitempty"`
+	GenerateExistingOnPolicyUpdate bool `json:"generateExistingOnPolicyUpdate,omitempty" yaml:"generateExistingOnPolicyUpdate,omitempty"`
 }
 
 func (s *Spec) SetRules(rules []Rule) {
@@ -133,6 +118,7 @@ func (s *Spec) HasMutate() bool {
 			return true
 		}
 	}
+
 	return false
 }
 
@@ -143,6 +129,7 @@ func (s *Spec) HasValidate() bool {
 			return true
 		}
 	}
+
 	return false
 }
 
@@ -153,16 +140,18 @@ func (s *Spec) HasGenerate() bool {
 			return true
 		}
 	}
+
 	return false
 }
 
-// HasVerifyImageChecks checks for image verification rules invoked during resource validation
-func (s *Spec) HasVerifyImageChecks() bool {
+// HasImagesValidationChecks checks for image verification rules invoked during resource validation
+func (s *Spec) HasImagesValidationChecks() bool {
 	for _, rule := range s.Rules {
-		if rule.HasVerifyImageChecks() {
+		if rule.HasImagesValidationChecks() {
 			return true
 		}
 	}
+
 	return false
 }
 
@@ -173,16 +162,18 @@ func (s *Spec) HasVerifyImages() bool {
 			return true
 		}
 	}
+
 	return false
 }
 
-// HasVerifyManifests checks for image verification rules invoked during resource mutation
-func (s *Spec) HasVerifyManifests() bool {
+// HasYAMLSignatureVerify checks for image verification rules invoked during resource mutation
+func (s *Spec) HasYAMLSignatureVerify() bool {
 	for _, rule := range s.Rules {
-		if rule.HasVerifyManifests() {
+		if rule.HasYAMLSignatureVerify() {
 			return true
 		}
 	}
+
 	return false
 }
 
@@ -191,6 +182,7 @@ func (s *Spec) BackgroundProcessingEnabled() bool {
 	if s.Background == nil {
 		return true
 	}
+
 	return *s.Background
 }
 
@@ -209,12 +201,9 @@ func (s *Spec) GetMutateExistingOnPolicyUpdate() bool {
 	return s.MutateExistingOnPolicyUpdate
 }
 
-// IsGenerateExisting return GenerateExisting set value
-func (s *Spec) IsGenerateExisting() bool {
-	if s.GenerateExistingOnPolicyUpdate != nil && *s.GenerateExistingOnPolicyUpdate {
-		return true
-	}
-	return s.GenerateExisting
+// IsGenerateExistingOnPolicyUpdate return GenerateExistingOnPolicyUpdate set value
+func (s *Spec) IsGenerateExistingOnPolicyUpdate() bool {
+	return s.GenerateExistingOnPolicyUpdate
 }
 
 // GetFailurePolicy returns the failure policy to be applied
@@ -264,38 +253,8 @@ func (s *Spec) ValidateRules(path *field.Path, namespaced bool, policyNamespace 
 	return errs
 }
 
-func (s *Spec) validateDeprecatedFields(path *field.Path) (errs field.ErrorList) {
-	if s.GenerateExistingOnPolicyUpdate != nil {
-		errs = append(errs, field.Forbidden(path.Child("generateExistingOnPolicyUpdate"), "deprecated field, define generateExisting instead"))
-	}
-	return errs
-}
-
-func (s *Spec) validateMutateTargets(path *field.Path) (errs field.ErrorList) {
-	if s.MutateExistingOnPolicyUpdate {
-		for i, rule := range s.Rules {
-			if !rule.HasMutate() {
-				continue
-			}
-			if len(rule.Mutation.Targets) == 0 {
-				errs = append(errs, field.Forbidden(path.Child("mutateExistingOnPolicyUpdate"), fmt.Sprintf("rules[%v].mutate.targets has to be specified when mutateExistingOnPolicyUpdate is set", i)))
-			}
-		}
-	}
-	return errs
-}
-
 // Validate implements programmatic validation
 func (s *Spec) Validate(path *field.Path, namespaced bool, policyNamespace string, clusterResources sets.Set[string]) (errs field.ErrorList) {
-	if err := s.validateDeprecatedFields(path); err != nil {
-		errs = append(errs, err...)
-	}
-	if err := s.validateMutateTargets(path); err != nil {
-		errs = append(errs, err...)
-	}
-	if s.WebhookTimeoutSeconds != nil && (*s.WebhookTimeoutSeconds < 1 || *s.WebhookTimeoutSeconds > 30) {
-		errs = append(errs, field.Invalid(path.Child("webhookTimeoutSeconds"), s.WebhookTimeoutSeconds, "the timeout value must be between 1 and 30 seconds"))
-	}
 	errs = append(errs, s.ValidateRules(path.Child("rules"), namespaced, policyNamespace, clusterResources)...)
 	if namespaced && len(s.ValidationFailureActionOverrides) > 0 {
 		errs = append(errs, field.Forbidden(path.Child("validationFailureActionOverrides"), "Use of validationFailureActionOverrides is supported only with ClusterPolicy"))

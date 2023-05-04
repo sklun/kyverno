@@ -13,11 +13,12 @@ import (
 	"github.com/spf13/cobra"
 	"k8s.io/klog/v2"
 	"k8s.io/klog/v2/klogr"
-	"sigs.k8s.io/controller-runtime/pkg/log"
+	log "sigs.k8s.io/controller-runtime/pkg/log"
 )
 
 const EnableExperimentalEnv = "KYVERNO_EXPERIMENTAL"
 
+// CLI ...
 func main() {
 	cli := &cobra.Command{
 		Use:   "kyverno",

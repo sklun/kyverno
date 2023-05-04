@@ -3,7 +3,7 @@ kind: ClusterPolicy
 metadata:
   name: keyless-nomutatedigest-noverifydigest-required
 spec:
-  validationFailureAction: Enforce
+  validationFailureAction: enforce
   webhookTimeoutSeconds: 30
   rules:
     - name: check-builder-id-keyless

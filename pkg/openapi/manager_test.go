@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/go-logr/logr"
 	v1 "github.com/kyverno/kyverno/api/kyverno/v1"
 	"gotest.tools/assert"
 )
@@ -73,23 +72,21 @@ func Test_ValidateMutationPolicy(t *testing.T) {
 		},
 	}
 
-	o, _ := NewManager(logr.Discard())
+	o, _ := NewManager()
 
 	for i, tc := range tcs {
-		t.Run(tc.description, func(t *testing.T) {
-			policy := v1.ClusterPolicy{}
-			_ = json.Unmarshal(tc.policy, &policy)
-			var errMessage string
-			err := o.ValidatePolicyMutation(&policy)
-			if err != nil {
-				errMessage = err.Error()
-			}
-			if tc.mustSucceed {
-				assert.NilError(t, err, "\nTestcase [%v] failed: Expected no error, Got error:  %v", i+1, errMessage)
-			} else {
-				assert.Assert(t, err != nil, "\nTestcase [%v] failed: Expected error to have occurred", i+1)
-			}
-		})
+		policy := v1.ClusterPolicy{}
+		_ = json.Unmarshal(tc.policy, &policy)
+		var errMessage string
+		err := o.ValidatePolicyMutation(&policy)
+		if err != nil {
+			errMessage = err.Error()
+		}
+		if tc.mustSucceed {
+			assert.NilError(t, err, "\nTestcase [%v] failed: Expected no error, Got error:  %v", i+1, errMessage)
+		} else {
+			assert.Assert(t, err != nil, "\nTestcase [%v] failed: Expected error to have occurred", i+1)
+		}
 	}
 
 }
@@ -189,10 +186,8 @@ func Test_matchGVK(t *testing.T) {
 	}
 
 	for i, test := range testCases {
-		t.Run(test.definitionName, func(t *testing.T) {
-			res := matchGVK(test.definitionName, test.gvk)
-			assert.Equal(t, res, test.match, "test #%d failed", i)
-		})
+		res := matchGVK(test.definitionName, test.gvk)
+		assert.Equal(t, res, test.match, "test #%d failed", i)
 	}
 }
 
@@ -201,7 +196,7 @@ func Test_matchGVK(t *testing.T) {
 // networking.k8s.io/v1beta1/Ingress
 // extensions/v1beta1/Ingress
 func Test_Ingress(t *testing.T) {
-	o, err := NewManager(logr.Discard())
+	o, err := NewManager()
 	assert.NilError(t, err)
 
 	versions, ok := o.kindToAPIVersions.Get("Ingress")

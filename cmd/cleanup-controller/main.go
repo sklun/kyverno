@@ -18,7 +18,6 @@ import (
 	"github.com/kyverno/kyverno/pkg/config"
 	"github.com/kyverno/kyverno/pkg/controllers/certmanager"
 	"github.com/kyverno/kyverno/pkg/controllers/cleanup"
-	genericloggingcontroller "github.com/kyverno/kyverno/pkg/controllers/generic/logging"
 	genericwebhookcontroller "github.com/kyverno/kyverno/pkg/controllers/generic/webhook"
 	"github.com/kyverno/kyverno/pkg/leaderelection"
 	"github.com/kyverno/kyverno/pkg/metrics"
@@ -55,13 +54,11 @@ func main() {
 		leaderElectionRetryPeriod time.Duration
 		dumpPayload               bool
 		serverIP                  string
-		servicePort               int
 	)
 	flagset := flag.NewFlagSet("cleanup-controller", flag.ExitOnError)
 	flagset.BoolVar(&dumpPayload, "dumpPayload", false, "Set this flag to activate/deactivate debug mode.")
 	flagset.DurationVar(&leaderElectionRetryPeriod, "leaderElectionRetryPeriod", leaderelection.DefaultRetryPeriod, "Configure leader election retry period.")
 	flagset.StringVar(&serverIP, "serverIP", "", "IP address where Kyverno controller runs. Only required if out-of-cluster.")
-	flagset.IntVar(&servicePort, "servicePort", 443, "Port used by the Kyverno Service resource and for webhook configurations.")
 	// config
 	appConfig := internal.NewConfiguration(
 		internal.WithProfiling(),
@@ -124,11 +121,9 @@ func main() {
 					kubeClient.AdmissionregistrationV1().ValidatingWebhookConfigurations(),
 					kubeInformer.Admissionregistration().V1().ValidatingWebhookConfigurations(),
 					kubeKyvernoInformer.Core().V1().Secrets(),
-					kubeKyvernoInformer.Core().V1().ConfigMaps(),
 					config.CleanupValidatingWebhookConfigurationName,
 					config.CleanupValidatingWebhookServicePath,
 					serverIP,
-					int32(servicePort),
 					[]admissionregistrationv1.RuleWithOperations{{
 						Rule: admissionregistrationv1.Rule{
 							APIGroups:   []string{"kyverno.io"},
@@ -189,26 +184,13 @@ func main() {
 	cpolLister := kyvernoInformer.Kyverno().V2alpha1().ClusterCleanupPolicies().Lister()
 	polLister := kyvernoInformer.Kyverno().V2alpha1().CleanupPolicies().Lister()
 	nsLister := kubeInformer.Core().V1().Namespaces().Lister()
-	// log policy changes
-	genericloggingcontroller.NewController(
-		logger.WithName("cleanup-policy"),
-		"CleanupPolicy",
-		kyvernoInformer.Kyverno().V2alpha1().CleanupPolicies(),
-		genericloggingcontroller.CheckGeneration,
-	)
-	genericloggingcontroller.NewController(
-		logger.WithName("cluster-cleanup-policy"),
-		"ClusterCleanupPolicy",
-		kyvernoInformer.Kyverno().V2alpha1().ClusterCleanupPolicies(),
-		genericloggingcontroller.CheckGeneration,
-	)
 	// start informers and wait for cache sync
 	if !internal.StartInformersAndWaitForCacheSync(ctx, logger, kubeKyvernoInformer, kubeInformer, kyvernoInformer) {
 		os.Exit(1)
 	}
 	// create handlers
 	admissionHandlers := admissionhandlers.New(dClient)
-	cleanupHandlers := cleanuphandlers.New(dClient, cpolLister, polLister, nsLister, logger.WithName("cleanup-handler"))
+	cleanupHandlers := cleanuphandlers.New(dClient, cpolLister, polLister, nsLister)
 	// create server
 	server := NewServer(
 		func() ([]byte, []byte, error) {
@@ -225,10 +207,16 @@ func main() {
 			DumpPayload: dumpPayload,
 		},
 		probes{},
-		config.NewDefaultConfiguration(false),
 	)
 	// start server
 	server.Run(ctx.Done())
-	// start leader election
-	le.Run(ctx)
+	// wait for termination signal and run leader election loop
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		default:
+			le.Run(ctx)
+		}
+	}
 }

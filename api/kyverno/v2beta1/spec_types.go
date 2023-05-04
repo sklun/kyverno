@@ -63,15 +63,11 @@ type Spec struct {
 	// +optional
 	MutateExistingOnPolicyUpdate bool `json:"mutateExistingOnPolicyUpdate,omitempty" yaml:"mutateExistingOnPolicyUpdate,omitempty"`
 
-	// Deprecated, use generateExisting instead
-	// +optional
-	GenerateExistingOnPolicyUpdate *bool `json:"generateExistingOnPolicyUpdate,omitempty" yaml:"generateExistingOnPolicyUpdate,omitempty"`
-
-	// GenerateExisting controls whether to trigger generate rule in existing resources
+	// GenerateExistingOnPolicyUpdate controls whether to trigger generate rule in existing resources
 	// If is set to "true" generate rule will be triggered and applied to existing matched resources.
 	// Defaults to "false" if not specified.
 	// +optional
-	GenerateExisting bool `json:"generateExisting,omitempty" yaml:"generateExisting,omitempty"`
+	GenerateExistingOnPolicyUpdate bool `json:"generateExistingOnPolicyUpdate,omitempty" yaml:"generateExistingOnPolicyUpdate,omitempty"`
 }
 
 func (s *Spec) SetRules(rules []Rule) {
@@ -121,10 +117,10 @@ func (s *Spec) HasGenerate() bool {
 	return false
 }
 
-// HasVerifyImageChecks checks for image verification rules invoked during resource validation
-func (s *Spec) HasVerifyImageChecks() bool {
+// HasImagesValidationChecks checks for image verification rules invoked during resource validation
+func (s *Spec) HasImagesValidationChecks() bool {
 	for _, rule := range s.Rules {
-		if rule.HasVerifyImageChecks() {
+		if rule.HasImagesValidationChecks() {
 			return true
 		}
 	}
@@ -143,10 +139,10 @@ func (s *Spec) HasVerifyImages() bool {
 	return false
 }
 
-// HasVerifyManifests checks for image verification rules invoked during resource mutation
-func (s *Spec) HasVerifyManifests() bool {
+// HasYAMLSignatureVerify checks for image verification rules invoked during resource mutation
+func (s *Spec) HasYAMLSignatureVerify() bool {
 	for _, rule := range s.Rules {
-		if rule.HasVerifyManifests() {
+		if rule.HasYAMLSignatureVerify() {
 			return true
 		}
 	}
@@ -178,12 +174,9 @@ func (s *Spec) GetMutateExistingOnPolicyUpdate() bool {
 	return s.MutateExistingOnPolicyUpdate
 }
 
-// IsGenerateExisting return GenerateExisting set value
-func (s *Spec) IsGenerateExisting() bool {
-	if s.GenerateExistingOnPolicyUpdate != nil && *s.GenerateExistingOnPolicyUpdate {
-		return true
-	}
-	return s.GenerateExisting
+// IsGenerateExistingOnPolicyUpdate return GenerateExistingOnPolicyUpdate set value
+func (s *Spec) IsGenerateExistingOnPolicyUpdate() bool {
+	return s.GenerateExistingOnPolicyUpdate
 }
 
 // GetFailurePolicy returns the failure policy to be applied
@@ -224,21 +217,8 @@ func (s *Spec) ValidateRules(path *field.Path, namespaced bool, clusterResources
 	return errs
 }
 
-func (s *Spec) ValidateDeprecatedFields(path *field.Path) (errs field.ErrorList) {
-	if s.GenerateExistingOnPolicyUpdate != nil {
-		errs = append(errs, field.Forbidden(path.Child("generateExistingOnPolicyUpdate"), "deprecated field, define generateExisting instead"))
-	}
-	return errs
-}
-
 // Validate implements programmatic validation
 func (s *Spec) Validate(path *field.Path, namespaced bool, clusterResources sets.Set[string]) (errs field.ErrorList) {
-	if err := s.ValidateDeprecatedFields(path); err != nil {
-		errs = append(errs, err...)
-	}
-	if s.WebhookTimeoutSeconds != nil && (*s.WebhookTimeoutSeconds < 1 || *s.WebhookTimeoutSeconds > 30) {
-		errs = append(errs, field.Invalid(path.Child("webhookTimeoutSeconds"), s.WebhookTimeoutSeconds, "the timeout value must be between 1 and 30 seconds"))
-	}
 	errs = append(errs, s.ValidateRules(path.Child("rules"), namespaced, clusterResources)...)
 	if namespaced && len(s.ValidationFailureActionOverrides) > 0 {
 		errs = append(errs, field.Forbidden(path.Child("validationFailureActionOverrides"), "Use of validationFailureActionOverrides is supported only with ClusterPolicy"))

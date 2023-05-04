@@ -5,7 +5,7 @@ metadata:
   annotations:
     pod-policies.kyverno.io/autogen-controllers: CronJob
 spec:
-  validationFailureAction: Audit
+  validationFailureAction: audit
   rules:
   - match:
       resources:

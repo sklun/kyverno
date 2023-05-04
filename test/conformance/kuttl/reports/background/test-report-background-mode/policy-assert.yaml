@@ -15,7 +15,7 @@ spec:
       podSecurity:
         level: restricted
         version: latest
-  validationFailureAction: Audit
+  validationFailureAction: audit
 status:
   conditions:
   - reason: Succeeded

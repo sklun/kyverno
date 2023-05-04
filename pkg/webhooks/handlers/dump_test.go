@@ -138,10 +138,10 @@ func Test_RedactPayload(t *testing.T) {
 
 	for _, c := range tc {
 		t.Run(c.name, func(t *testing.T) {
-			var req admissionv1.AdmissionRequest
-			err := json.Unmarshal(c.requestPayload, &req)
+			req := new(admissionv1.AdmissionRequest)
+			err := json.Unmarshal(c.requestPayload, req)
 			assert.NilError(t, err)
-			payload, err := newAdmissionRequestPayload(AdmissionRequest{AdmissionRequest: req})
+			payload, err := newAdmissionRequestPayload(req, nil, nil, nil)
 			assert.NilError(t, err)
 			if payload.Object.Object != nil {
 				data, err := datautils.ToMap(payload.Object.Object["data"])

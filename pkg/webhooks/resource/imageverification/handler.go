@@ -4,16 +4,17 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"reflect"
 
 	"github.com/go-logr/logr"
 	kyvernov1 "github.com/kyverno/kyverno/api/kyverno/v1"
 	"github.com/kyverno/kyverno/pkg/client/clientset/versioned"
-	"github.com/kyverno/kyverno/pkg/config"
 	"github.com/kyverno/kyverno/pkg/engine"
-	engineapi "github.com/kyverno/kyverno/pkg/engine/api"
+	"github.com/kyverno/kyverno/pkg/engine/response"
 	"github.com/kyverno/kyverno/pkg/event"
+	"github.com/kyverno/kyverno/pkg/registryclient"
 	"github.com/kyverno/kyverno/pkg/tracing"
-	admissionutils "github.com/kyverno/kyverno/pkg/utils/admission"
+	controllerutils "github.com/kyverno/kyverno/pkg/utils/controller"
 	jsonutils "github.com/kyverno/kyverno/pkg/utils/json"
 	reportutils "github.com/kyverno/kyverno/pkg/utils/report"
 	webhookutils "github.com/kyverno/kyverno/pkg/webhooks/utils"
@@ -25,39 +26,36 @@ import (
 )
 
 type ImageVerificationHandler interface {
-	Handle(context.Context, admissionv1.AdmissionRequest, []kyvernov1.PolicyInterface, *engine.PolicyContext) ([]byte, []string, error)
+	Handle(context.Context, *admissionv1.AdmissionRequest, []kyvernov1.PolicyInterface, *engine.PolicyContext) ([]byte, []string, error)
 }
 
 type imageVerificationHandler struct {
 	kyvernoClient    versioned.Interface
-	engine           engineapi.Engine
+	rclient          registryclient.Client
 	log              logr.Logger
 	eventGen         event.Interface
 	admissionReports bool
-	cfg              config.Configuration
 }
 
 func NewImageVerificationHandler(
 	log logr.Logger,
 	kyvernoClient versioned.Interface,
-	engine engineapi.Engine,
+	rclient registryclient.Client,
 	eventGen event.Interface,
 	admissionReports bool,
-	cfg config.Configuration,
 ) ImageVerificationHandler {
 	return &imageVerificationHandler{
 		kyvernoClient:    kyvernoClient,
-		engine:           engine,
+		rclient:          rclient,
 		log:              log,
 		eventGen:         eventGen,
 		admissionReports: admissionReports,
-		cfg:              cfg,
 	}
 }
 
 func (h *imageVerificationHandler) Handle(
 	ctx context.Context,
-	request admissionv1.AdmissionRequest,
+	request *admissionv1.AdmissionRequest,
 	policies []kyvernov1.PolicyInterface,
 	policyContext *engine.PolicyContext,
 ) ([]byte, []string, error) {
@@ -72,16 +70,16 @@ func (h *imageVerificationHandler) Handle(
 func (h *imageVerificationHandler) handleVerifyImages(
 	ctx context.Context,
 	logger logr.Logger,
-	request admissionv1.AdmissionRequest,
+	request *admissionv1.AdmissionRequest,
 	policyContext *engine.PolicyContext,
 	policies []kyvernov1.PolicyInterface,
 ) (bool, string, []byte, []string) {
 	if len(policies) == 0 {
 		return true, "", nil, nil
 	}
-	var engineResponses []engineapi.EngineResponse
+	var engineResponses []*response.EngineResponse
 	var patches [][]byte
-	verifiedImageData := engineapi.ImageVerificationMetadata{}
+	verifiedImageData := &engine.ImageVerificationMetadata{}
 	for _, policy := range policies {
 		tracing.ChildSpan(
 			ctx,
@@ -89,10 +87,9 @@ func (h *imageVerificationHandler) handleVerifyImages(
 			fmt.Sprintf("POLICY %s/%s", policy.GetNamespace(), policy.GetName()),
 			func(ctx context.Context, span trace.Span) {
 				policyContext := policyContext.WithPolicy(policy)
-				resp, ivm := h.engine.VerifyAndPatchImages(ctx, policyContext)
-				if !resp.IsEmpty() {
-					engineResponses = append(engineResponses, resp)
-				}
+				resp, ivm := engine.VerifyAndPatchImages(ctx, h.rclient, policyContext)
+
+				engineResponses = append(engineResponses, resp)
 				patches = append(patches, resp.GetPatches()...)
 				verifiedImageData.Merge(ivm)
 			},
@@ -136,9 +133,11 @@ func hasAnnotations(context *engine.PolicyContext) bool {
 
 func isResourceDeleted(policyContext *engine.PolicyContext) bool {
 	var deletionTimeStamp *metav1.Time
-	if resource := policyContext.NewResource(); resource.Object != nil {
+	if reflect.DeepEqual(policyContext.NewResource, unstructured.Unstructured{}) {
+		resource := policyContext.NewResource()
 		deletionTimeStamp = resource.GetDeletionTimestamp()
-	} else if resource := policyContext.OldResource(); resource.Object != nil {
+	} else {
+		resource := policyContext.OldResource()
 		deletionTimeStamp = resource.GetDeletionTimestamp()
 	}
 	return deletionTimeStamp != nil
@@ -147,34 +146,39 @@ func isResourceDeleted(policyContext *engine.PolicyContext) bool {
 func (v *imageVerificationHandler) handleAudit(
 	ctx context.Context,
 	resource unstructured.Unstructured,
-	request admissionv1.AdmissionRequest,
+	request *admissionv1.AdmissionRequest,
 	namespaceLabels map[string]string,
-	engineResponses ...engineapi.EngineResponse,
+	engineResponses ...*response.EngineResponse,
 ) {
-	createReport := v.admissionReports
-	if admissionutils.IsDryRun(request) {
-		createReport = false
+	if !v.admissionReports {
+		return
+	}
+	if request.DryRun != nil && *request.DryRun {
+		return
 	}
 	// we don't need reports for deletions and when it's about sub resources
 	if request.Operation == admissionv1.Delete || request.SubResource != "" {
-		createReport = false
+		return
 	}
 	// check if the resource supports reporting
 	if !reportutils.IsGvkSupported(schema.GroupVersionKind(request.Kind)) {
-		createReport = false
+		return
 	}
 	tracing.Span(
 		context.Background(),
 		"",
 		fmt.Sprintf("AUDIT %s %s", request.Operation, request.Kind),
 		func(ctx context.Context, span trace.Span) {
-			if createReport {
-				report := reportutils.BuildAdmissionReport(resource, request, engineResponses...)
-				if len(report.GetResults()) > 0 {
-					_, err := reportutils.CreateReport(context.Background(), report, v.kyvernoClient)
-					if err != nil {
-						v.log.Error(err, "failed to create report")
-					}
+			report := reportutils.BuildAdmissionReport(resource, request, request.Kind, engineResponses...)
+			// if it's not a creation, the resource already exists, we can set the owner
+			if request.Operation != admissionv1.Create {
+				gv := metav1.GroupVersion{Group: request.Kind.Group, Version: request.Kind.Version}
+				controllerutils.SetOwner(report, gv.String(), request.Kind.Kind, resource.GetName(), resource.GetUID())
+			}
+			if len(report.GetResults()) > 0 {
+				_, err := reportutils.CreateReport(context.Background(), report, v.kyvernoClient)
+				if err != nil {
+					v.log.Error(err, "failed to create report")
 				}
 			}
 		},

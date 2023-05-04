@@ -1,12 +1,13 @@
 package utils
 
 import (
+	"reflect"
+
 	"github.com/go-logr/logr"
 	kyvernov1 "github.com/kyverno/kyverno/api/kyverno/v1"
 	kyvernov1alpha2 "github.com/kyverno/kyverno/api/kyverno/v1alpha2"
 	"github.com/kyverno/kyverno/pkg/autogen"
 	"github.com/kyverno/kyverno/pkg/policy"
-	datautils "github.com/kyverno/kyverno/pkg/utils/data"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
 )
@@ -47,7 +48,7 @@ func RemoveNonValidationPolicies(policies ...kyvernov1.PolicyInterface) []kyvern
 	var validationPolicies []kyvernov1.PolicyInterface
 	for _, pol := range policies {
 		spec := pol.GetSpec()
-		if spec.HasVerifyImages() || spec.HasValidate() || spec.HasVerifyManifests() {
+		if spec.HasVerifyImages() || spec.HasValidate() || spec.HasYAMLSignatureVerify() {
 			validationPolicies = append(validationPolicies, pol)
 		}
 	}
@@ -55,10 +56,10 @@ func RemoveNonValidationPolicies(policies ...kyvernov1.PolicyInterface) []kyvern
 }
 
 func ReportsAreIdentical(before, after kyvernov1alpha2.ReportInterface) bool {
-	if !datautils.DeepEqual(before.GetAnnotations(), after.GetAnnotations()) {
+	if !reflect.DeepEqual(before.GetAnnotations(), after.GetAnnotations()) {
 		return false
 	}
-	if !datautils.DeepEqual(before.GetLabels(), after.GetLabels()) {
+	if !reflect.DeepEqual(before.GetLabels(), after.GetLabels()) {
 		return false
 	}
 	b := before.GetResults()
@@ -71,7 +72,7 @@ func ReportsAreIdentical(before, after kyvernov1alpha2.ReportInterface) bool {
 		b := b[i]
 		a.Timestamp = metav1.Timestamp{}
 		b.Timestamp = metav1.Timestamp{}
-		if !datautils.DeepEqual(&a, &b) {
+		if !reflect.DeepEqual(&a, &b) {
 			return false
 		}
 	}

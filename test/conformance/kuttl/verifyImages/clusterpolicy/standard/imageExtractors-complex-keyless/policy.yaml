@@ -3,7 +3,7 @@ kind: ClusterPolicy
 metadata:
   name: tasks-keyless
 spec:
-  validationFailureAction: Enforce
+  validationFailureAction: enforce
   webhookTimeoutSeconds: 30
   rules:
   - name: verify-images

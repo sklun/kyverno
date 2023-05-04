@@ -10,34 +10,34 @@ import (
 	policyvalidate "github.com/kyverno/kyverno/pkg/policy"
 	admissionutils "github.com/kyverno/kyverno/pkg/utils/admission"
 	"github.com/kyverno/kyverno/pkg/webhooks"
-	"github.com/kyverno/kyverno/pkg/webhooks/handlers"
+	admissionv1 "k8s.io/api/admission/v1"
 )
 
-type policyHandlers struct {
+type handlers struct {
 	client         dclient.Interface
 	openApiManager openapi.Manager
 }
 
 func NewHandlers(client dclient.Interface, openApiManager openapi.Manager) webhooks.PolicyHandlers {
-	return &policyHandlers{
+	return &handlers{
 		client:         client,
 		openApiManager: openApiManager,
 	}
 }
 
-func (h *policyHandlers) Validate(ctx context.Context, logger logr.Logger, request handlers.AdmissionRequest, _ time.Time) handlers.AdmissionResponse {
-	policy, oldPolicy, err := admissionutils.GetPolicies(request.AdmissionRequest)
+func (h *handlers) Validate(ctx context.Context, logger logr.Logger, request *admissionv1.AdmissionRequest, _ time.Time) *admissionv1.AdmissionResponse {
+	policy, _, err := admissionutils.GetPolicies(request)
 	if err != nil {
 		logger.Error(err, "failed to unmarshal policies from admission request")
 		return admissionutils.Response(request.UID, err)
 	}
-	warnings, err := policyvalidate.Validate(policy, oldPolicy, h.client, false, h.openApiManager)
+	warnings, err := policyvalidate.Validate(policy, h.client, false, h.openApiManager)
 	if err != nil {
 		logger.Error(err, "policy validation errors")
 	}
 	return admissionutils.Response(request.UID, err, warnings...)
 }
 
-func (h *policyHandlers) Mutate(_ context.Context, _ logr.Logger, request handlers.AdmissionRequest, _ time.Time) handlers.AdmissionResponse {
-	return admissionutils.ResponseSuccess(request.UID)
+func (h *handlers) Mutate(_ context.Context, _ logr.Logger, _ *admissionv1.AdmissionRequest, _ time.Time) *admissionv1.AdmissionResponse {
+	return nil
 }

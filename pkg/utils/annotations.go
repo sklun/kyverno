@@ -95,14 +95,14 @@ func annotationFromEngineResponses(engineResponses []engineapi.EngineResponse, l
 	annotationContent := make(map[string]string)
 	for _, engineResponse := range engineResponses {
 		if !engineResponse.IsSuccessful() {
-			log.V(3).Info("skip building annotation; policy failed to apply", "policy", engineResponse.Policy.GetName())
+			log.V(3).Info("skip building annotation; policy failed to apply", "policy", engineResponse.Policy().GetName())
 			continue
 		}
 		rulePatches := annotationFromPolicyResponse(engineResponse.PolicyResponse, log)
 		if rulePatches == nil {
 			continue
 		}
-		policyName := engineResponse.Policy.GetName()
+		policyName := engineResponse.Policy().GetName()
 		for _, rulePatch := range rulePatches {
 			annotationContent[rulePatch.RuleName+"."+policyName+".kyverno.io"] = OperationToPastTense[rulePatch.Op] + " " + rulePatch.Path
 		}
@@ -122,14 +122,14 @@ func annotationFromEngineResponses(engineResponses []engineapi.EngineResponse, l
 func annotationFromPolicyResponse(policyResponse engineapi.PolicyResponse, log logr.Logger) []RulePatch {
 	var RulePatches []RulePatch
 	for _, ruleInfo := range policyResponse.Rules {
-		for _, patch := range ruleInfo.Patches {
+		for _, patch := range ruleInfo.Patches() {
 			var patchmap map[string]interface{}
 			if err := json.Unmarshal(patch, &patchmap); err != nil {
 				log.Error(err, "Failed to parse JSON patch bytes")
 				continue
 			}
 			rp := RulePatch{
-				RuleName: ruleInfo.Name,
+				RuleName: ruleInfo.Name(),
 				Op:       patchmap["op"].(string),
 				Path:     patchmap["path"].(string),
 			}

@@ -26,10 +26,11 @@ import (
 	"github.com/kyverno/kyverno/pkg/autogen"
 	"github.com/kyverno/kyverno/pkg/background/generate"
 	"github.com/kyverno/kyverno/pkg/clients/dclient"
+	"github.com/kyverno/kyverno/pkg/config"
 	engineapi "github.com/kyverno/kyverno/pkg/engine/api"
 	"github.com/kyverno/kyverno/pkg/openapi"
-	policy2 "github.com/kyverno/kyverno/pkg/policy"
 	gitutils "github.com/kyverno/kyverno/pkg/utils/git"
+	policyvalidation "github.com/kyverno/kyverno/pkg/validation/policy"
 	"github.com/spf13/cobra"
 	"golang.org/x/exp/slices"
 	corev1 "k8s.io/api/core/v1"
@@ -432,15 +433,15 @@ func buildPolicyResults(engineResponses []*engineapi.EngineResponse, testResults
 	now := metav1.Timestamp{Seconds: time.Now().Unix()}
 
 	for _, resp := range engineResponses {
-		policyName := resp.Policy.GetName()
+		policyName := resp.Policy().GetName()
 		resourceName := resp.Resource.GetName()
 		resourceKind := resp.Resource.GetKind()
 		resourceNamespace := resp.Resource.GetNamespace()
-		policyNamespace := resp.Policy.GetNamespace()
+		policyNamespace := resp.Policy().GetNamespace()
 
 		var rules []string
 		for _, rule := range resp.PolicyResponse.Rules {
-			rules = append(rules, rule.Name)
+			rules = append(rules, rule.Name())
 		}
 
 		result := policyreportv1alpha2.PolicyReportResult{
@@ -542,14 +543,14 @@ func buildPolicyResults(engineResponses []*engineapi.EngineResponse, testResults
 			}
 
 			for _, rule := range resp.PolicyResponse.Rules {
-				if rule.Type != engineapi.Generation || test.Rule != rule.Name {
+				if rule.RuleType() != engineapi.Generation || test.Rule != rule.Name() {
 					continue
 				}
 
 				var resultsKey []string
 				var resultKey string
 				var result policyreportv1alpha2.PolicyReportResult
-				resultsKey = GetAllPossibleResultsKey(policyNamespace, policyName, rule.Name, resourceNamespace, resourceKind, resourceName)
+				resultsKey = GetAllPossibleResultsKey(policyNamespace, policyName, rule.Name(), resourceNamespace, resourceKind, resourceName)
 				for _, key := range resultsKey {
 					if val, ok := results[key]; ok {
 						result = val
@@ -558,14 +559,14 @@ func buildPolicyResults(engineResponses []*engineapi.EngineResponse, testResults
 						continue
 					}
 
-					if rule.Status == engineapi.RuleStatusSkip {
+					if rule.Status() == engineapi.RuleStatusSkip {
 						result.Result = policyreportv1alpha2.StatusSkip
-					} else if rule.Status == engineapi.RuleStatusError {
+					} else if rule.Status() == engineapi.RuleStatusError {
 						result.Result = policyreportv1alpha2.StatusError
 					} else {
 						var x string
 						result.Result = policyreportv1alpha2.StatusFail
-						x = getAndCompareResource(test.GeneratedResource, rule.GeneratedResource, isGit, policyResourcePath, fs, true)
+						x = getAndCompareResource(test.GeneratedResource, rule.GeneratedResource(), isGit, policyResourcePath, fs, true)
 						if x == "pass" {
 							result.Result = policyreportv1alpha2.StatusPass
 						}
@@ -576,14 +577,14 @@ func buildPolicyResults(engineResponses []*engineapi.EngineResponse, testResults
 		}
 
 		for _, rule := range resp.PolicyResponse.Rules {
-			if rule.Type != engineapi.Mutation {
+			if rule.RuleType() != engineapi.Mutation {
 				continue
 			}
 
 			var resultsKey []string
 			var resultKey string
 			var result policyreportv1alpha2.PolicyReportResult
-			resultsKey = GetAllPossibleResultsKey(policyNamespace, policyName, rule.Name, resourceNamespace, resourceKind, resourceName)
+			resultsKey = GetAllPossibleResultsKey(policyNamespace, policyName, rule.Name(), resourceNamespace, resourceKind, resourceName)
 			for _, key := range resultsKey {
 				if val, ok := results[key]; ok {
 					result = val
@@ -592,9 +593,9 @@ func buildPolicyResults(engineResponses []*engineapi.EngineResponse, testResults
 					continue
 				}
 
-				if rule.Status == engineapi.RuleStatusSkip {
+				if rule.Status() == engineapi.RuleStatusSkip {
 					result.Result = policyreportv1alpha2.StatusSkip
-				} else if rule.Status == engineapi.RuleStatusError {
+				} else if rule.Status() == engineapi.RuleStatusError {
 					result.Result = policyreportv1alpha2.StatusError
 				} else {
 					var x string
@@ -710,8 +711,8 @@ func getAndCompareResource(path string, engineResource unstructured.Unstructured
 func buildMessage(resp *engineapi.EngineResponse) string {
 	var bldr strings.Builder
 	for _, ruleResp := range resp.PolicyResponse.Rules {
-		fmt.Fprintf(&bldr, "  %s: %s \n", ruleResp.Name, ruleResp.Status)
-		fmt.Fprintf(&bldr, "    %s \n", ruleResp.Message)
+		fmt.Fprintf(&bldr, "  %s: %s \n", ruleResp.Name(), ruleResp.Status())
+		fmt.Fprintf(&bldr, "    %s \n", ruleResp.Message())
 	}
 
 	return bldr.String()
@@ -873,7 +874,7 @@ func applyPoliciesFromPath(fs billy.Filesystem, policyBytes []byte, isGit bool, 
 	}
 
 	for _, policy := range policies {
-		_, err := policy2.Validate(policy, nil, nil, true, openApiManager)
+		_, err := policyvalidation.Validate(policy, nil, nil, true, openApiManager, config.KyvernoUserName(config.KyvernoServiceAccountName()))
 		if err != nil {
 			log.Log.Error(err, "skipping invalid policy", "name", policy.GetName())
 			continue

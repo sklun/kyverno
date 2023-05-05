@@ -21,7 +21,7 @@ func (e *engine) reportMetrics(
 	if e.resultCounter == nil && e.durationHistogram == nil {
 		return
 	}
-	policy := response.Policy
+	policy := response.Policy()
 	if name, namespace, policyType, backgroundMode, validationMode, err := metrics.GetPolicyInfos(policy); err != nil {
 		logger.Error(err, "failed to get policy infos for metrics reporting")
 	} else {
@@ -35,10 +35,10 @@ func (e *engine) reportMetrics(
 		resourceKind := resourceSpec.GetKind()
 		resourceNamespace := resourceSpec.GetNamespace()
 		for _, rule := range response.PolicyResponse.Rules {
-			ruleName := rule.Name
+			ruleName := rule.Name()
 			ruleType := metrics.ParseRuleTypeFromEngineRuleResponse(rule)
 			var ruleResult metrics.RuleResult
-			switch rule.Status {
+			switch rule.Status() {
 			case engineapi.RuleStatusPass:
 				ruleResult = metrics.Pass
 			case engineapi.RuleStatusFail:
@@ -88,7 +88,7 @@ func (e *engine) reportMetrics(
 					attribute.String("rule_type", string(ruleType)),
 					attribute.String("rule_execution_cause", string(executionCause)),
 				}
-				e.durationHistogram.Record(ctx, rule.Stats.ProcessingTime.Seconds(), commonLabels...)
+				e.durationHistogram.Record(ctx, rule.Stats().ProcessingTime().Seconds(), commonLabels...)
 			}
 		}
 	}

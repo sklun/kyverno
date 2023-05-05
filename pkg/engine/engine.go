@@ -14,6 +14,7 @@ import (
 	enginecontext "github.com/kyverno/kyverno/pkg/engine/context"
 	"github.com/kyverno/kyverno/pkg/engine/handlers"
 	"github.com/kyverno/kyverno/pkg/engine/internal"
+	"github.com/kyverno/kyverno/pkg/engine/jmespath"
 	engineutils "github.com/kyverno/kyverno/pkg/engine/utils"
 	"github.com/kyverno/kyverno/pkg/logging"
 	"github.com/kyverno/kyverno/pkg/metrics"
@@ -28,6 +29,7 @@ import (
 type engine struct {
 	configuration        config.Configuration
 	metricsConfiguration config.MetricsConfiguration
+	jp                   jmespath.Interface
 	client               dclient.Interface
 	rclient              registryclient.Client
 	contextLoader        engineapi.ContextLoaderFactory
@@ -42,6 +44,7 @@ type handlerFactory = func() (handlers.Handler, error)
 func NewEngine(
 	configuration config.Configuration,
 	metricsConfiguration config.MetricsConfiguration,
+	jp jmespath.Interface,
 	client dclient.Interface,
 	rclient registryclient.Client,
 	contextLoader engineapi.ContextLoaderFactory,
@@ -50,7 +53,7 @@ func NewEngine(
 	meter := global.MeterProvider().Meter(metrics.MeterName)
 	resultCounter, err := meter.Int64Counter(
 		"kyverno_policy_results",
-		instrument.WithDescription("can be used to track the results associated with the policies applied in the user’s cluster, at the level from rule to policy to admission requests"),
+		instrument.WithDescription("can be used to track the results associated with the policies applied in the user's cluster, at the level from rule to policy to admission requests"),
 	)
 	if err != nil {
 		logging.Error(err, "failed to register metric kyverno_policy_results")
@@ -65,6 +68,7 @@ func NewEngine(
 	return &engine{
 		configuration:        configuration,
 		metricsConfiguration: metricsConfiguration,
+		jp:                   jp,
 		client:               client,
 		rclient:              rclient,
 		contextLoader:        contextLoader,
@@ -78,13 +82,14 @@ func (e *engine) Validate(
 	ctx context.Context,
 	policyContext engineapi.PolicyContext,
 ) engineapi.EngineResponse {
-	response := engineapi.NewEngineResponseFromPolicyContext(policyContext, time.Now())
+	startTime := time.Now()
+	response := engineapi.NewEngineResponseFromPolicyContext(policyContext)
 	logger := internal.LoggerWithPolicyContext(logging.WithName("engine.validate"), policyContext)
 	if internal.MatchPolicyContext(logger, policyContext, e.configuration) {
 		policyResponse := e.validate(ctx, logger, policyContext)
 		response = response.WithPolicyResponse(policyResponse)
 	}
-	response = response.Done(time.Now())
+	response = response.WithStats(engineapi.NewExecutionStats(startTime, time.Now()))
 	e.reportMetrics(ctx, logger, policyContext.Operation(), policyContext.AdmissionOperation(), response)
 	return response
 }
@@ -93,7 +98,8 @@ func (e *engine) Mutate(
 	ctx context.Context,
 	policyContext engineapi.PolicyContext,
 ) engineapi.EngineResponse {
-	response := engineapi.NewEngineResponseFromPolicyContext(policyContext, time.Now())
+	startTime := time.Now()
+	response := engineapi.NewEngineResponseFromPolicyContext(policyContext)
 	logger := internal.LoggerWithPolicyContext(logging.WithName("engine.mutate"), policyContext)
 	if internal.MatchPolicyContext(logger, policyContext, e.configuration) {
 		policyResponse, patchedResource := e.mutate(ctx, logger, policyContext)
@@ -101,7 +107,7 @@ func (e *engine) Mutate(
 			WithPolicyResponse(policyResponse).
 			WithPatchedResource(patchedResource)
 	}
-	response = response.Done(time.Now())
+	response = response.WithStats(engineapi.NewExecutionStats(startTime, time.Now()))
 	e.reportMetrics(ctx, logger, policyContext.Operation(), policyContext.AdmissionOperation(), response)
 	return response
 }
@@ -110,13 +116,14 @@ func (e *engine) Generate(
 	ctx context.Context,
 	policyContext engineapi.PolicyContext,
 ) engineapi.EngineResponse {
-	response := engineapi.NewEngineResponseFromPolicyContext(policyContext, time.Now())
+	startTime := time.Now()
+	response := engineapi.NewEngineResponseFromPolicyContext(policyContext)
 	logger := internal.LoggerWithPolicyContext(logging.WithName("engine.generate"), policyContext)
 	if internal.MatchPolicyContext(logger, policyContext, e.configuration) {
 		policyResponse := e.generateResponse(ctx, logger, policyContext)
 		response = response.WithPolicyResponse(policyResponse)
 	}
-	response = response.Done(time.Now())
+	response = response.WithStats(engineapi.NewExecutionStats(startTime, time.Now()))
 	e.reportMetrics(ctx, logger, policyContext.Operation(), policyContext.AdmissionOperation(), response)
 	return response
 }
@@ -125,14 +132,15 @@ func (e *engine) VerifyAndPatchImages(
 	ctx context.Context,
 	policyContext engineapi.PolicyContext,
 ) (engineapi.EngineResponse, engineapi.ImageVerificationMetadata) {
-	response := engineapi.NewEngineResponseFromPolicyContext(policyContext, time.Now())
+	startTime := time.Now()
+	response := engineapi.NewEngineResponseFromPolicyContext(policyContext)
 	ivm := engineapi.ImageVerificationMetadata{}
 	logger := internal.LoggerWithPolicyContext(logging.WithName("engine.verify"), policyContext)
 	if internal.MatchPolicyContext(logger, policyContext, e.configuration) {
 		policyResponse, innerIvm := e.verifyAndPatchImages(ctx, logger, policyContext)
 		response, ivm = response.WithPolicyResponse(policyResponse), innerIvm
 	}
-	response = response.Done(time.Now())
+	response = response.WithStats(engineapi.NewExecutionStats(startTime, time.Now()))
 	e.reportMetrics(ctx, logger, policyContext.Operation(), policyContext.AdmissionOperation(), response)
 	return response, ivm
 }
@@ -141,13 +149,14 @@ func (e *engine) ApplyBackgroundChecks(
 	ctx context.Context,
 	policyContext engineapi.PolicyContext,
 ) engineapi.EngineResponse {
-	response := engineapi.NewEngineResponseFromPolicyContext(policyContext, time.Now())
+	startTime := time.Now()
+	response := engineapi.NewEngineResponseFromPolicyContext(policyContext)
 	logger := internal.LoggerWithPolicyContext(logging.WithName("engine.background"), policyContext)
 	if internal.MatchPolicyContext(logger, policyContext, e.configuration) {
 		policyResponse := e.applyBackgroundChecks(ctx, logger, policyContext)
 		response = response.WithPolicyResponse(policyResponse)
 	}
-	response = response.Done(time.Now())
+	response = response.WithStats(engineapi.NewExecutionStats(startTime, time.Now()))
 	e.reportMetrics(ctx, logger, policyContext.Operation(), policyContext.AdmissionOperation(), response)
 	return response
 }
@@ -160,6 +169,7 @@ func (e *engine) ContextLoader(
 	return func(ctx context.Context, contextEntries []kyvernov1.ContextEntry, jsonContext enginecontext.Interface) error {
 		return loader.Load(
 			ctx,
+			e.jp,
 			e.client,
 			e.rclient,
 			contextEntries,
@@ -227,13 +237,13 @@ func (e *engine) invokeRuleHandler(
 				return resource, nil
 			}
 			if handlerFactory == nil {
-				return resource, handlers.RuleResponses(internal.RuleError(rule, ruleType, "failed to instantiate handler", nil))
+				return resource, handlers.WithError(rule, ruleType, "failed to instantiate handler", nil)
 			} else if handler, err := handlerFactory(); err != nil {
-				return resource, handlers.RuleResponses(internal.RuleError(rule, ruleType, "failed to instantiate handler", err))
+				return resource, handlers.WithError(rule, ruleType, "failed to instantiate handler", err)
 			} else if handler != nil {
 				// check if there's an exception
 				if ruleResp := e.hasPolicyExceptions(logger, ruleType, policyContext, rule); ruleResp != nil {
-					return resource, handlers.RuleResponses(ruleResp)
+					return resource, handlers.WithResponses(ruleResp)
 				}
 				// load rule context
 				contextLoader := e.ContextLoader(policyContext.Policy(), rule)
@@ -243,15 +253,15 @@ func (e *engine) invokeRuleHandler(
 					} else {
 						logger.Error(err, "failed to load context")
 					}
-					return resource, handlers.RuleResponses(internal.RuleError(rule, ruleType, "failed to load context", err))
+					return resource, handlers.WithError(rule, ruleType, "failed to load context", err)
 				}
 				// check preconditions
 				preconditionsPassed, err := internal.CheckPreconditions(logger, policyContext.JSONContext(), rule.GetAnyAllConditions())
 				if err != nil {
-					return resource, handlers.RuleResponses(internal.RuleError(rule, ruleType, "failed to evaluate preconditions", err))
+					return resource, handlers.WithError(rule, ruleType, "failed to evaluate preconditions", err)
 				}
 				if !preconditionsPassed {
-					return resource, handlers.RuleResponses(internal.RuleSkip(rule, ruleType, "preconditions not met"))
+					return resource, handlers.WithSkip(rule, ruleType, "preconditions not met")
 				}
 				// process handler
 				return handler.Process(ctx, logger, policyContext, resource, rule, contextLoader)

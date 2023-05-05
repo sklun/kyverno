@@ -9,7 +9,7 @@ metadata:
   name: pol-data-nosync-delete-rule-policy
   namespace: otter
 spec:
-  generateExisting: false
+  generateExistingOnPolicyUpdate: false
   rules:
   - name: pol-data-nosync-delete-rule-policy-ruleone
     match:

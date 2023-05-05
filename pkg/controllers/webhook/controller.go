@@ -95,7 +95,6 @@ type controller struct {
 	// config
 	server             string
 	defaultTimeout     int32
-	servicePort        int32
 	autoUpdateWebhooks bool
 	admissionReports   bool
 	runtime            runtimeutils.Runtime
@@ -121,7 +120,6 @@ func NewController(
 	clusterroleInformer rbacv1informers.ClusterRoleInformer,
 	server string,
 	defaultTimeout int32,
-	servicePort int32,
 	autoUpdateWebhooks bool,
 	admissionReports bool,
 	runtime runtimeutils.Runtime,
@@ -144,7 +142,6 @@ func NewController(
 		queue:              queue,
 		server:             server,
 		defaultTimeout:     defaultTimeout,
-		servicePort:        servicePort,
 		autoUpdateWebhooks: autoUpdateWebhooks,
 		admissionReports:   admissionReports,
 		runtime:            runtime,
@@ -328,7 +325,6 @@ func (c *controller) clientConfig(caBundle []byte, path string) admissionregistr
 			Namespace: config.KyvernoNamespace(),
 			Name:      config.KyvernoServiceName(),
 			Path:      &path,
-			Port:      &c.servicePort,
 		}
 	} else {
 		url := fmt.Sprintf("https://%s%s", c.server, path)
@@ -629,13 +625,19 @@ func (c *controller) buildResourceMutatingWebhookConfiguration(caBundle []byte) 
 			return nil, err
 		}
 		c.recordPolicyState(config.MutatingWebhookConfigurationName, policies...)
-		for _, p := range policies {
-			spec := p.GetSpec()
-			if spec.HasMutate() || spec.HasVerifyImages() {
-				if spec.GetFailurePolicy() == kyvernov1.Ignore {
-					c.mergeWebhook(ignore, p, false)
-				} else {
-					c.mergeWebhook(fail, p, false)
+		// TODO: shouldn't be per failure policy, depending of the policy/rules that apply ?
+		if hasWildcard(policies...) {
+			ignore.setWildcard()
+			fail.setWildcard()
+		} else {
+			for _, p := range policies {
+				spec := p.GetSpec()
+				if spec.HasMutate() || spec.HasVerifyImages() {
+					if spec.GetFailurePolicy() == kyvernov1.Ignore {
+						c.mergeWebhook(ignore, p, false)
+					} else {
+						c.mergeWebhook(fail, p, false)
+					}
 				}
 			}
 		}
@@ -730,13 +732,19 @@ func (c *controller) buildResourceValidatingWebhookConfiguration(caBundle []byte
 			return nil, err
 		}
 		c.recordPolicyState(config.ValidatingWebhookConfigurationName, policies...)
-		for _, p := range policies {
-			spec := p.GetSpec()
-			if spec.HasValidate() || spec.HasGenerate() || spec.HasMutate() || spec.HasImagesValidationChecks() || spec.HasYAMLSignatureVerify() {
-				if spec.GetFailurePolicy() == kyvernov1.Ignore {
-					c.mergeWebhook(ignore, p, true)
-				} else {
-					c.mergeWebhook(fail, p, true)
+		// TODO: shouldn't be per failure policy, depending of the policy/rules that apply ?
+		if hasWildcard(policies...) {
+			ignore.setWildcard()
+			fail.setWildcard()
+		} else {
+			for _, p := range policies {
+				spec := p.GetSpec()
+				if spec.HasValidate() || spec.HasGenerate() || spec.HasMutate() || spec.HasImagesValidationChecks() || spec.HasYAMLSignatureVerify() {
+					if spec.GetFailurePolicy() == kyvernov1.Ignore {
+						c.mergeWebhook(ignore, p, true)
+					} else {
+						c.mergeWebhook(fail, p, true)
+					}
 				}
 			}
 		}
@@ -813,7 +821,7 @@ func (c *controller) getLease() (*coordinationv1.Lease, error) {
 
 // mergeWebhook merges the matching kinds of the policy to webhook.rule
 func (c *controller) mergeWebhook(dst *webhook, policy kyvernov1.PolicyInterface, updateValidate bool) {
-	var matchedGVK []string
+	matchedGVK := make([]string, 0)
 	for _, rule := range autogen.ComputeRules(policy) {
 		// matching kinds in generate policies need to be added to both webhook
 		if rule.HasGenerate() {
@@ -829,35 +837,34 @@ func (c *controller) mergeWebhook(dst *webhook, policy kyvernov1.PolicyInterface
 			matchedGVK = append(matchedGVK, rule.MatchResources.GetKinds()...)
 		}
 	}
-	var gvrsList []dclient.GroupVersionResourceSubresource
+	gvkMap := make(map[string]int)
+	gvrList := make([]schema.GroupVersionResource, 0)
 	for _, gvk := range matchedGVK {
-		// NOTE: webhook stores GVR in its rules while policy stores GVK in its rules definition
-		group, version, kind, subresource := kubeutils.ParseKindSelector(gvk)
-		// if kind is `*` no need to lookup resources
-		if kind == "*" && subresource == "*" {
-			gvrsList = append(gvrsList, dclient.GroupVersionResourceSubresource{
-				GroupVersionResource: schema.GroupVersionResource{Group: group, Version: version, Resource: "*"},
-				SubResource:          "*",
-			})
-		} else if kind == "*" && subresource == "" {
-			gvrsList = append(gvrsList, dclient.GroupVersionResourceSubresource{
-				GroupVersionResource: schema.GroupVersionResource{Group: group, Version: version, Resource: "*"},
-			})
-		} else if kind == "*" && subresource != "" {
-			gvrsList = append(gvrsList, dclient.GroupVersionResourceSubresource{
-				GroupVersionResource: schema.GroupVersionResource{Group: group, Version: version, Resource: "*"},
-				SubResource:          subresource,
-			})
-		} else {
-			gvrss, err := c.discoveryClient.FindResources(group, version, kind, subresource)
+		if _, ok := gvkMap[gvk]; !ok {
+			gvkMap[gvk] = 1
+			// NOTE: webhook stores GVR in its rules while policy stores GVK in its rules definition
+			gv, k := kubeutils.GetKindFromGVK(gvk)
+			_, parentAPIResource, gvr, err := c.discoveryClient.FindResource(gv, k)
 			if err != nil {
-				logger.Error(err, "unable to find resource", "group", group, "version", version, "kind", kind, "subresource", subresource)
+				logger.Error(err, "unable to convert GVK to GVR", "GVK", gvk)
 				continue
 			}
-			gvrsList = append(gvrsList, gvrss...)
+			if parentAPIResource != nil {
+				gvr = schema.GroupVersionResource{
+					Group:    parentAPIResource.Group,
+					Version:  parentAPIResource.Version,
+					Resource: gvr.Resource,
+				}
+			}
+			if strings.Contains(gvk, "*") {
+				gvrList = append(gvrList, schema.GroupVersionResource{Group: gvr.Group, Version: "*", Resource: gvr.Resource})
+			} else {
+				logger.V(4).Info("configuring webhook", "GVK", gvk, "GVR", gvr)
+				gvrList = append(gvrList, gvr)
+			}
 		}
 	}
-	for _, gvr := range gvrsList {
+	for _, gvr := range gvrList {
 		dst.set(gvr)
 	}
 	spec := policy.GetSpec()

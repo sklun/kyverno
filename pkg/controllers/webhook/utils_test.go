@@ -6,22 +6,16 @@ import (
 
 	kyverno "github.com/kyverno/kyverno/api/kyverno/v1"
 	"github.com/kyverno/kyverno/pkg/autogen"
-	"github.com/kyverno/kyverno/pkg/clients/dclient"
 
 	"gotest.tools/assert"
 	admissionregistrationv1 "k8s.io/api/admissionregistration/v1"
-	"k8s.io/apimachinery/pkg/runtime/schema"
 )
 
 func Test_webhook_isEmpty(t *testing.T) {
 	empty := newWebhook(DefaultWebhookTimeout, admissionregistrationv1.Ignore)
 	assert.Equal(t, empty.isEmpty(), true)
 	notEmpty := newWebhook(DefaultWebhookTimeout, admissionregistrationv1.Ignore)
-	notEmpty.set(dclient.GroupVersionResourceSubresource{
-		GroupVersionResource: schema.GroupVersionResource{
-			Group: "", Version: "v1", Resource: "pods",
-		},
-	})
+	notEmpty.setWildcard()
 	assert.Equal(t, notEmpty.isEmpty(), false)
 }
 

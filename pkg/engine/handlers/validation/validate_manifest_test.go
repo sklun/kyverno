@@ -788,16 +788,11 @@ func buildContext(t *testing.T, policy, resource string, oldResource string) eng
 	resourceUnstructured, err := kubeutils.BytesToUnstructured([]byte(resource))
 	assert.NilError(t, err)
 
-	policyContext, err := policycontext.NewPolicyContext(
-		jp,
-		*resourceUnstructured,
-		kyvernov1.Create,
-		nil,
-		cfg,
-	)
+	ctx := enginecontext.NewContext(jp)
+	err = enginecontext.AddResource(ctx, []byte(resource))
 	assert.NilError(t, err)
 
-	policyContext = policyContext.
+	policyContext := policycontext.NewPolicyContextWithJsonContext(kyvernov1.Create, ctx).
 		WithPolicy(&cpol).
 		WithNewResource(*resourceUnstructured)
 
@@ -805,10 +800,15 @@ func buildContext(t *testing.T, policy, resource string, oldResource string) eng
 		oldResourceUnstructured, err := kubeutils.BytesToUnstructured([]byte(oldResource))
 		assert.NilError(t, err)
 
-		err = enginecontext.AddOldResource(policyContext.JSONContext(), []byte(oldResource))
+		err = enginecontext.AddOldResource(ctx, []byte(oldResource))
 		assert.NilError(t, err)
 
 		policyContext = policyContext.WithOldResource(*oldResourceUnstructured)
+	}
+
+	if err := ctx.AddImageInfos(resourceUnstructured, cfg); err != nil {
+		t.Errorf("unable to add image info to variables context: %v", err)
+		t.Fail()
 	}
 
 	return policyContext

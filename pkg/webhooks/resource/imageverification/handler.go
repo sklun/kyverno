@@ -11,7 +11,6 @@ import (
 	"github.com/kyverno/kyverno/pkg/config"
 	"github.com/kyverno/kyverno/pkg/engine"
 	engineapi "github.com/kyverno/kyverno/pkg/engine/api"
-	"github.com/kyverno/kyverno/pkg/engine/mutate/patch"
 	"github.com/kyverno/kyverno/pkg/event"
 	"github.com/kyverno/kyverno/pkg/tracing"
 	admissionutils "github.com/kyverno/kyverno/pkg/utils/admission"
@@ -19,7 +18,6 @@ import (
 	jsonutils "github.com/kyverno/kyverno/pkg/utils/json"
 	reportutils "github.com/kyverno/kyverno/pkg/utils/report"
 	webhookutils "github.com/kyverno/kyverno/pkg/webhooks/utils"
-	"github.com/mattbaird/jsonpatch"
 	"go.opentelemetry.io/otel/trace"
 	admissionv1 "k8s.io/api/admission/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -86,7 +84,7 @@ func (h *imageVerificationHandler) handleVerifyImages(
 		return true, "", nil, nil
 	}
 	var engineResponses []engineapi.EngineResponse
-	var patches []jsonpatch.JsonPatchOperation
+	var patches [][]byte
 	verifiedImageData := engineapi.ImageVerificationMetadata{}
 	failurePolicy := kyvernov1.Ignore
 
@@ -139,7 +137,7 @@ func (h *imageVerificationHandler) handleVerifyImages(
 	go h.handleAudit(ctx, policyContext.NewResource(), request, nil, engineResponses...)
 
 	warnings := webhookutils.GetWarningMessages(engineResponses)
-	return true, "", jsonutils.JoinPatches(patch.ConvertPatches(patches...)...), warnings
+	return true, "", jsonutils.JoinPatches(patches...), warnings
 }
 
 func hasAnnotations(context *engine.PolicyContext) bool {

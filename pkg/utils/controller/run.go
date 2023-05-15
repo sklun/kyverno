@@ -8,8 +8,8 @@ import (
 	"github.com/go-logr/logr"
 	"github.com/kyverno/kyverno/pkg/metrics"
 	"go.opentelemetry.io/otel/attribute"
-	sdkmetric "go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/metric/global"
+	"go.opentelemetry.io/otel/metric/instrument"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -21,28 +21,28 @@ type reconcileFunc func(ctx context.Context, logger logr.Logger, key string, nam
 
 type controllerMetrics struct {
 	controllerName string
-	reconcileTotal sdkmetric.Int64Counter
-	requeueTotal   sdkmetric.Int64Counter
-	queueDropTotal sdkmetric.Int64Counter
+	reconcileTotal instrument.Int64Counter
+	requeueTotal   instrument.Int64Counter
+	queueDropTotal instrument.Int64Counter
 }
 
 func newControllerMetrics(logger logr.Logger, controllerName string) *controllerMetrics {
 	meter := global.MeterProvider().Meter(metrics.MeterName)
 	reconcileTotal, err := meter.Int64Counter(
 		"kyverno_controller_reconcile",
-		sdkmetric.WithDescription("can be used to track number of reconciliation cycles"))
+		instrument.WithDescription("can be used to track number of reconciliation cycles"))
 	if err != nil {
 		logger.Error(err, "Failed to create instrument, kyverno_controller_reconcile_total")
 	}
 	requeueTotal, err := meter.Int64Counter(
 		"kyverno_controller_requeue",
-		sdkmetric.WithDescription("can be used to track number of reconciliation errors"))
+		instrument.WithDescription("can be used to track number of reconciliation errors"))
 	if err != nil {
 		logger.Error(err, "Failed to create instrument, kyverno_controller_requeue_total")
 	}
 	queueDropTotal, err := meter.Int64Counter(
 		"kyverno_controller_drop",
-		sdkmetric.WithDescription("can be used to track number of queue drops"))
+		instrument.WithDescription("can be used to track number of queue drops"))
 	if err != nil {
 		logger.Error(err, "Failed to create instrument, kyverno_controller_drop_total")
 	}
@@ -104,7 +104,7 @@ func processNextWorkItem(ctx context.Context, logger logr.Logger, metric *contro
 
 func handleErr(ctx context.Context, logger logr.Logger, metric *controllerMetrics, queue workqueue.RateLimitingInterface, maxRetries int, err error, obj interface{}) {
 	if metric.reconcileTotal != nil {
-		metric.reconcileTotal.Add(ctx, 1, sdkmetric.WithAttributes(attribute.String("controller_name", metric.controllerName)))
+		metric.reconcileTotal.Add(ctx, 1, attribute.String("controller_name", metric.controllerName))
 	}
 	if err == nil {
 		queue.Forget(obj)
@@ -118,10 +118,8 @@ func handleErr(ctx context.Context, logger logr.Logger, metric *controllerMetric
 			metric.requeueTotal.Add(
 				ctx,
 				1,
-				sdkmetric.WithAttributes(
-					attribute.String("controller_name", metric.controllerName),
-					attribute.Int("num_requeues", queue.NumRequeues(obj)),
-				),
+				attribute.String("controller_name", metric.controllerName),
+				attribute.Int("num_requeues", queue.NumRequeues(obj)),
 			)
 		}
 	} else {
@@ -131,9 +129,7 @@ func handleErr(ctx context.Context, logger logr.Logger, metric *controllerMetric
 			metric.queueDropTotal.Add(
 				ctx,
 				1,
-				sdkmetric.WithAttributes(
-					attribute.String("controller_name", metric.controllerName),
-				),
+				attribute.String("controller_name", metric.controllerName),
 			)
 		}
 	}

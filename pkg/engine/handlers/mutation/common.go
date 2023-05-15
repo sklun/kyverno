@@ -9,6 +9,7 @@ import (
 	engineapi "github.com/kyverno/kyverno/pkg/engine/api"
 	"github.com/kyverno/kyverno/pkg/engine/internal"
 	"github.com/kyverno/kyverno/pkg/engine/mutate"
+	"github.com/kyverno/kyverno/pkg/engine/mutate/patch"
 	engineutils "github.com/kyverno/kyverno/pkg/engine/utils"
 	"github.com/kyverno/kyverno/pkg/utils/api"
 	"github.com/mattbaird/jsonpatch"
@@ -152,7 +153,7 @@ func buildRuleResponse(rule *kyvernov1.Rule, mutateResp *mutate.Response, info r
 		mutateResp.Status,
 	)
 	if mutateResp.Status == engineapi.RuleStatusPass {
-		resp = resp.WithPatches(mutateResp.Patches...)
+		resp = resp.WithPatches(patch.ConvertPatches(mutateResp.Patches...)...)
 		if len(rule.Mutation.Targets) != 0 {
 			resp = resp.WithPatchedTarget(&mutateResp.PatchedResource, info.parentResourceGVR, info.subresource)
 		}

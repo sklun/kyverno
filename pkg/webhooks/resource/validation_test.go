@@ -1068,16 +1068,7 @@ func TestValidate_failure_action_overrides(t *testing.T) {
 			resourceUnstructured, err := kubeutils.BytesToUnstructured(tc.rawResource)
 			assert.NilError(t, err)
 
-			ctx, err := engine.NewPolicyContext(
-				jp,
-				*resourceUnstructured,
-				kyvernov1.Create,
-				nil,
-				cfg,
-			)
-			assert.NilError(t, err)
-
-			ctx = ctx.WithPolicy(&policy).WithNamespaceLabels(tc.rawResourceNamespaceLabels)
+			ctx := engine.NewPolicyContext(jp, kyvernov1.Create).WithPolicy(&policy).WithNewResource(*resourceUnstructured).WithNamespaceLabels(tc.rawResourceNamespaceLabels)
 			er := eng.Validate(
 				context.TODO(),
 				ctx,
@@ -1141,16 +1132,7 @@ func Test_RuleSelector(t *testing.T) {
 
 	cfg := config.NewDefaultConfiguration(false)
 	jp := jmespath.New(cfg)
-	ctx, err := engine.NewPolicyContext(
-		jp,
-		*resourceUnstructured,
-		kyvernov1.Create,
-		nil,
-		cfg,
-	)
-	assert.NilError(t, err)
-
-	ctx = ctx.WithPolicy(&policy)
+	ctx := engine.NewPolicyContext(jp, kyvernov1.Create).WithPolicy(&policy).WithNewResource(*resourceUnstructured)
 
 	eng := engine.NewEngine(
 		cfg,

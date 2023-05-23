@@ -16,6 +16,7 @@ import (
 	"go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetricgrpc"
 	"go.opentelemetry.io/otel/exporters/prometheus"
 	"go.opentelemetry.io/otel/metric"
+	"go.opentelemetry.io/otel/metric/instrument"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/metric/aggregation"
 	"go.opentelemetry.io/otel/sdk/resource"
@@ -29,8 +30,8 @@ const (
 
 type MetricsConfig struct {
 	// instruments
-	policyChangesMetric metric.Int64Counter
-	clientQueriesMetric metric.Int64Counter
+	policyChangesMetric instrument.Int64Counter
+	clientQueriesMetric instrument.Int64Counter
 
 	// config
 	config kconfig.MetricsConfiguration
@@ -50,12 +51,12 @@ func (m *MetricsConfig) Config() kconfig.MetricsConfiguration {
 func (m *MetricsConfig) initializeMetrics(meterProvider metric.MeterProvider) error {
 	var err error
 	meter := meterProvider.Meter(MeterName)
-	m.policyChangesMetric, err = meter.Int64Counter("kyverno_policy_changes", metric.WithDescription("can be used to track all the changes associated with the Kyverno policies present on the cluster such as creation, updates and deletions"))
+	m.policyChangesMetric, err = meter.Int64Counter("kyverno_policy_changes", instrument.WithDescription("can be used to track all the changes associated with the Kyverno policies present on the cluster such as creation, updates and deletions"))
 	if err != nil {
 		m.Log.Error(err, "Failed to create instrument, kyverno_policy_changes")
 		return err
 	}
-	m.clientQueriesMetric, err = meter.Int64Counter("kyverno_client_queries", metric.WithDescription("can be used to track the number of client queries sent from Kyverno to the API-server"))
+	m.clientQueriesMetric, err = meter.Int64Counter("kyverno_client_queries", instrument.WithDescription("can be used to track the number of client queries sent from Kyverno to the API-server"))
 	if err != nil {
 		m.Log.Error(err, "Failed to create instrument, kyverno_client_queries")
 		return err
@@ -193,7 +194,7 @@ func (m *MetricsConfig) RecordPolicyChanges(ctx context.Context, policyValidatio
 		attribute.String("policy_name", policyName),
 		attribute.String("policy_change_type", policyChangeType),
 	}
-	m.policyChangesMetric.Add(ctx, 1, metric.WithAttributes(commonLabels...))
+	m.policyChangesMetric.Add(ctx, 1, commonLabels...)
 }
 
 func (m *MetricsConfig) RecordClientQueries(ctx context.Context, clientQueryOperation ClientQueryOperation, clientType ClientType, resourceKind string, resourceNamespace string) {
@@ -203,5 +204,5 @@ func (m *MetricsConfig) RecordClientQueries(ctx context.Context, clientQueryOper
 		attribute.String("resource_kind", resourceKind),
 		attribute.String("resource_namespace", resourceNamespace),
 	}
-	m.clientQueriesMetric.Add(ctx, 1, metric.WithAttributes(commonLabels...))
+	m.clientQueriesMetric.Add(ctx, 1, commonLabels...)
 }

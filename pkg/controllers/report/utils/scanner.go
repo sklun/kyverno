@@ -8,6 +8,7 @@ import (
 	"github.com/kyverno/kyverno/pkg/config"
 	"github.com/kyverno/kyverno/pkg/engine"
 	engineapi "github.com/kyverno/kyverno/pkg/engine/api"
+	enginecontext "github.com/kyverno/kyverno/pkg/engine/context"
 	"github.com/kyverno/kyverno/pkg/engine/jmespath"
 	"go.uber.org/multierr"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -71,11 +72,20 @@ func (s *scanner) ScanResource(ctx context.Context, resource unstructured.Unstru
 }
 
 func (s *scanner) validateResource(ctx context.Context, resource unstructured.Unstructured, nsLabels map[string]string, policy kyvernov1.PolicyInterface) (*engineapi.EngineResponse, error) {
-	policyCtx, err := engine.NewPolicyContext(s.jp, resource, kyvernov1.Create, nil, s.config)
-	if err != nil {
+	enginectx := enginecontext.NewContext(s.jp)
+	if err := enginectx.AddResource(resource.Object); err != nil {
 		return nil, err
 	}
-	policyCtx = policyCtx.
+	if err := enginectx.AddNamespace(resource.GetNamespace()); err != nil {
+		return nil, err
+	}
+	if err := enginectx.AddImageInfos(&resource, s.config); err != nil {
+		return nil, err
+	}
+	if err := enginectx.AddOperation("CREATE"); err != nil {
+		return nil, err
+	}
+	policyCtx := engine.NewPolicyContextWithJsonContext(kyvernov1.Create, enginectx).
 		WithNewResource(resource).
 		WithPolicy(policy).
 		WithNamespaceLabels(nsLabels)
@@ -84,11 +94,20 @@ func (s *scanner) validateResource(ctx context.Context, resource unstructured.Un
 }
 
 func (s *scanner) validateImages(ctx context.Context, resource unstructured.Unstructured, nsLabels map[string]string, policy kyvernov1.PolicyInterface) (*engineapi.EngineResponse, error) {
-	policyCtx, err := engine.NewPolicyContext(s.jp, resource, kyvernov1.Create, nil, s.config)
-	if err != nil {
+	enginectx := enginecontext.NewContext(s.jp)
+	if err := enginectx.AddResource(resource.Object); err != nil {
 		return nil, err
 	}
-	policyCtx = policyCtx.
+	if err := enginectx.AddNamespace(resource.GetNamespace()); err != nil {
+		return nil, err
+	}
+	if err := enginectx.AddImageInfos(&resource, s.config); err != nil {
+		return nil, err
+	}
+	if err := enginectx.AddOperation("CREATE"); err != nil {
+		return nil, err
+	}
+	policyCtx := engine.NewPolicyContextWithJsonContext(kyvernov1.Create, enginectx).
 		WithNewResource(resource).
 		WithPolicy(policy).
 		WithNamespaceLabels(nsLabels)

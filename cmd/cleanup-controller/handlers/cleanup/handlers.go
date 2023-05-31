@@ -10,7 +10,6 @@ import (
 	kyvernov2alpha1listers "github.com/kyverno/kyverno/pkg/client/listers/kyverno/v2alpha1"
 	"github.com/kyverno/kyverno/pkg/clients/dclient"
 	"github.com/kyverno/kyverno/pkg/config"
-	engineapi "github.com/kyverno/kyverno/pkg/engine/api"
 	enginecontext "github.com/kyverno/kyverno/pkg/engine/context"
 	"github.com/kyverno/kyverno/pkg/engine/jmespath"
 	"github.com/kyverno/kyverno/pkg/event"
@@ -18,8 +17,8 @@ import (
 	controllerutils "github.com/kyverno/kyverno/pkg/utils/controller"
 	"github.com/kyverno/kyverno/pkg/utils/match"
 	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/metric/global"
+	"go.opentelemetry.io/otel/metric/instrument"
 	"go.uber.org/multierr"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -41,25 +40,25 @@ type handlers struct {
 }
 
 type cleanupMetrics struct {
-	deletedObjectsTotal  metric.Int64Counter
-	cleanupFailuresTotal metric.Int64Counter
+	deletedObjectsTotal  instrument.Int64Counter
+	cleanupFailuresTotal instrument.Int64Counter
 }
 
 func newCleanupMetrics(logger logr.Logger) cleanupMetrics {
 	meter := global.MeterProvider().Meter(metrics.MeterName)
 	deletedObjectsTotal, err := meter.Int64Counter(
 		"kyverno_cleanup_controller_deletedobjects",
-		metric.WithDescription("can be used to track number of deleted objects."),
+		instrument.WithDescription("can be used to track number of deleted objects."),
 	)
 	if err != nil {
-		logger.Error(err, "Failed to create instrument, cleanup_controller_deletedobjects_total")
+		logger.Error(err, "Failed to create instrument, kyverno_cleanup_controller_deletedobjects_total")
 	}
 	cleanupFailuresTotal, err := meter.Int64Counter(
 		"kyverno_cleanup_controller_errors",
-		metric.WithDescription("can be used to track number of cleanup failures."),
+		instrument.WithDescription("can be used to track number of cleanup failures."),
 	)
 	if err != nil {
-		logger.Error(err, "Failed to create instrument, cleanup_controller_errors_total")
+		logger.Error(err, "Failed to create instrument, kyverno_cleanup_controller_errors_total")
 	}
 	return cleanupMetrics{
 		deletedObjectsTotal:  deletedObjectsTotal,
@@ -113,22 +112,6 @@ func (h *handlers) executePolicy(ctx context.Context, logger logr.Logger, policy
 	kinds := sets.New(spec.MatchResources.GetKinds()...)
 	debug := logger.V(4)
 	var errs []error
-	enginectx := enginecontext.NewContext(h.jp)
-
-	if spec.Context != nil {
-		for _, entry := range spec.Context {
-			if entry.APICall != nil {
-				if err := engineapi.LoadAPIData(ctx, h.jp, logger, entry, enginectx, h.client); err != nil {
-					return err
-				}
-			} else if entry.Variable != nil {
-				if err := engineapi.LoadVariable(logger, h.jp, entry, enginectx); err != nil {
-					return err
-				}
-			}
-		}
-	}
-
 	for kind := range kinds {
 		commonLabels := []attribute.KeyValue{
 			attribute.String("policy_type", policy.GetKind()),
@@ -143,7 +126,7 @@ func (h *handlers) executePolicy(ctx context.Context, logger logr.Logger, policy
 			debug.Error(err, "failed to list resources")
 			errs = append(errs, err)
 			if h.metrics.cleanupFailuresTotal != nil {
-				h.metrics.cleanupFailuresTotal.Add(ctx, 1, metric.WithAttributes(commonLabels...))
+				h.metrics.cleanupFailuresTotal.Add(ctx, 1, commonLabels...)
 			}
 		} else {
 			for i := range list.Items {
@@ -200,7 +183,7 @@ func (h *handlers) executePolicy(ctx context.Context, logger logr.Logger, policy
 					}
 					// check conditions
 					if spec.Conditions != nil {
-						enginectx.Reset()
+						enginectx := enginecontext.NewContext(h.jp)
 						if err := enginectx.SetTargetResource(resource.Object); err != nil {
 							debug.Error(err, "failed to add resource in context")
 							errs = append(errs, err)
@@ -233,14 +216,14 @@ func (h *handlers) executePolicy(ctx context.Context, logger logr.Logger, policy
 					logger.WithValues("name", name, "namespace", namespace).Info("resource matched, it will be deleted...")
 					if err := h.client.DeleteResource(ctx, resource.GetAPIVersion(), resource.GetKind(), namespace, name, false); err != nil {
 						if h.metrics.cleanupFailuresTotal != nil {
-							h.metrics.cleanupFailuresTotal.Add(ctx, 1, metric.WithAttributes(labels...))
+							h.metrics.cleanupFailuresTotal.Add(ctx, 1, labels...)
 						}
 						debug.Error(err, "failed to delete resource")
 						errs = append(errs, err)
 						h.createEvent(policy, resource, err)
 					} else {
 						if h.metrics.deletedObjectsTotal != nil {
-							h.metrics.deletedObjectsTotal.Add(ctx, 1, metric.WithAttributes(labels...))
+							h.metrics.deletedObjectsTotal.Add(ctx, 1, labels...)
 						}
 						debug.Info("deleted")
 						h.createEvent(policy, resource, nil)

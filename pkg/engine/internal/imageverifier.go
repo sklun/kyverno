@@ -2,6 +2,7 @@ package internal
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net"
@@ -15,12 +16,11 @@ import (
 	enginecontext "github.com/kyverno/kyverno/pkg/engine/context"
 	"github.com/kyverno/kyverno/pkg/engine/variables"
 	"github.com/kyverno/kyverno/pkg/images"
-	"github.com/kyverno/kyverno/pkg/notaryv2"
+	"github.com/kyverno/kyverno/pkg/notary"
 	"github.com/kyverno/kyverno/pkg/registryclient"
 	apiutils "github.com/kyverno/kyverno/pkg/utils/api"
 	"github.com/kyverno/kyverno/pkg/utils/jsonpointer"
 	"github.com/kyverno/kyverno/pkg/utils/wildcard"
-	"github.com/mattbaird/jsonpatch"
 	"go.uber.org/multierr"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
@@ -149,12 +149,12 @@ func buildStatementMap(statements []map[string]interface{}) (map[string][]map[st
 	return results, predicateTypes
 }
 
-func makeAddDigestPatch(imageInfo apiutils.ImageInfo, digest string) jsonpatch.JsonPatchOperation {
-	return jsonpatch.JsonPatchOperation{
-		Operation: "replace",
-		Path:      imageInfo.Pointer,
-		Value:     imageInfo.String() + "@" + digest,
-	}
+func makeAddDigestPatch(imageInfo apiutils.ImageInfo, digest string) ([]byte, error) {
+	patch := make(map[string]interface{})
+	patch["op"] = "replace"
+	patch["path"] = imageInfo.Pointer
+	patch["value"] = imageInfo.String() + "@" + digest
+	return json.Marshal(patch)
 }
 
 func EvaluateConditions(
@@ -223,7 +223,7 @@ func (iv *ImageVerifier) Verify(
 				if ruleResp == nil {
 					ruleResp = engineapi.RulePass(iv.rule.Name, engineapi.ImageVerify, "mutated image digest")
 				}
-				ruleResp = ruleResp.WithPatches(*patch)
+				ruleResp = ruleResp.WithPatches(patch)
 				imageInfo.Digest = retrievedDigest
 				image = imageInfo.String()
 			}
@@ -432,8 +432,8 @@ func (iv *ImageVerifier) buildVerifier(
 	attestation *kyvernov1.Attestation,
 ) (images.ImageVerifier, *images.Options, string) {
 	switch imageVerify.Type {
-	case kyvernov1.NotaryV2:
-		return iv.buildNotaryV2Verifier(attestor, imageVerify, image)
+	case kyvernov1.Notary:
+		return iv.buildNotaryVerifier(attestor, imageVerify, image)
 	default:
 		return iv.buildCosignVerifier(attestor, imageVerify, image, attestation)
 	}
@@ -509,7 +509,7 @@ func (iv *ImageVerifier) buildCosignVerifier(
 	return cosign.NewVerifier(), opts, path
 }
 
-func (iv *ImageVerifier) buildNotaryV2Verifier(
+func (iv *ImageVerifier) buildNotaryVerifier(
 	attestor kyvernov1.Attestor,
 	imageVerify kyvernov1.ImageVerification,
 	image string,
@@ -522,7 +522,7 @@ func (iv *ImageVerifier) buildNotaryV2Verifier(
 		RegistryClient: iv.rclient,
 	}
 
-	return notaryv2.NewVerifier(), opts, path
+	return notary.NewVerifier(), opts, path
 }
 
 func (iv *ImageVerifier) verifyAttestation(statements []map[string]interface{}, attestation kyvernov1.Attestation, imageInfo apiutils.ImageInfo) error {
@@ -559,7 +559,7 @@ func (iv *ImageVerifier) checkAttestations(a kyvernov1.Attestation, s map[string
 	return EvaluateConditions(a.Conditions, iv.policyContext.JSONContext(), s, iv.logger)
 }
 
-func (iv *ImageVerifier) handleMutateDigest(ctx context.Context, digest string, imageInfo apiutils.ImageInfo) (*jsonpatch.JsonPatchOperation, string, error) {
+func (iv *ImageVerifier) handleMutateDigest(ctx context.Context, digest string, imageInfo apiutils.ImageInfo) ([]byte, string, error) {
 	if imageInfo.Digest != "" {
 		return nil, "", nil
 	}
@@ -570,7 +570,10 @@ func (iv *ImageVerifier) handleMutateDigest(ctx context.Context, digest string, 
 		}
 		digest = desc.Digest.String()
 	}
-	patch := makeAddDigestPatch(imageInfo, digest)
-	iv.logger.V(4).Info("adding digest patch", "image", imageInfo.String(), "patch", patch.Json())
-	return &patch, digest, nil
+	patch, err := makeAddDigestPatch(imageInfo, digest)
+	if err != nil {
+		return nil, "", fmt.Errorf("failed to create image digest patch: %w", err)
+	}
+	iv.logger.V(4).Info("adding digest patch", "image", imageInfo.String(), "patch", string(patch))
+	return patch, digest, nil
 }

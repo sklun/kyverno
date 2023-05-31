@@ -10,6 +10,7 @@ import (
 	engineapi "github.com/kyverno/kyverno/pkg/engine/api"
 	"github.com/kyverno/kyverno/pkg/engine/context"
 	"github.com/kyverno/kyverno/pkg/engine/jmespath"
+	"github.com/kyverno/kyverno/pkg/engine/mutate/patch"
 	kubeutils "github.com/kyverno/kyverno/pkg/utils/kube"
 	"gotest.tools/assert"
 	"k8s.io/apiextensions-apiserver/pkg/apis/apiextensions"
@@ -57,7 +58,9 @@ func applyPatches(rule *types.Rule, resource unstructured.Unstructured) (*engine
 		"",
 		engineapi.Mutation,
 		mutateResp.Message,
-	).WithPatches(mutateResp.Patches...), mutateResp.PatchedResource
+	).WithPatches(
+		patch.ConvertPatches(mutateResp.Patches...)...,
+	), mutateResp.PatchedResource
 }
 
 func TestProcessPatches_EmptyPatches(t *testing.T) {
@@ -164,7 +167,7 @@ func TestProcessPatches_AddAndRemovePathsDontExist_ContinueOnError_NotEmptyResul
 	rr, _ := applyPatches(rule, *resourceUnstructured)
 	assert.Equal(t, rr.Status(), engineapi.RuleStatusPass)
 	assert.Assert(t, len(rr.Patches()) != 0)
-	assertEqStringAndData(t, `{"path":"/metadata/labels/label3","op":"add","value":"label3Value"}`, []byte(rr.Patches()[0].Json()))
+	assertEqStringAndData(t, `{"path":"/metadata/labels/label3","op":"add","value":"label3Value"}`, rr.Patches()[0])
 }
 
 func TestProcessPatches_RemovePathDoesntExist_EmptyResult(t *testing.T) {
@@ -190,7 +193,7 @@ func TestProcessPatches_RemovePathDoesntExist_NotEmptyResult(t *testing.T) {
 	rr, _ := applyPatches(rule, *resourceUnstructured)
 	assert.Equal(t, rr.Status(), engineapi.RuleStatusPass)
 	assert.Assert(t, len(rr.Patches()) == 1)
-	assertEqStringAndData(t, `{"path":"/metadata/labels/label2","op":"add","value":"label2Value"}`, []byte(rr.Patches()[0].Json()))
+	assertEqStringAndData(t, `{"path":"/metadata/labels/label2","op":"add","value":"label2Value"}`, rr.Patches()[0])
 }
 
 func assertEqStringAndData(t *testing.T, str string, data []byte) {

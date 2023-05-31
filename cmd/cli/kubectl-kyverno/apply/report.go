@@ -8,22 +8,24 @@ import (
 
 	kyvernov1 "github.com/kyverno/kyverno/api/kyverno/v1"
 	policyreportv1alpha2 "github.com/kyverno/kyverno/api/policyreport/v1alpha2"
+	"github.com/kyverno/kyverno/cmd/cli/kubectl-kyverno/utils/common"
 	engineapi "github.com/kyverno/kyverno/pkg/engine/api"
 	kubeutils "github.com/kyverno/kyverno/pkg/utils/kube"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
 const clusterpolicyreport = "clusterpolicyreport"
 
 // resps is the engine responses generated for a single policy
-func buildPolicyReports(auditWarn bool, engineResponses ...engineapi.EngineResponse) (res []*unstructured.Unstructured) {
+func buildPolicyReports(pvInfos []common.Info) (res []*unstructured.Unstructured) {
 	var raw []byte
 	var err error
 
-	resultsMap := buildPolicyResults(auditWarn, engineResponses...)
+	resultsMap := buildPolicyResults(pvInfos)
 	for scope, result := range resultsMap {
 		if scope == clusterpolicyreport {
 			report := &policyreportv1alpha2.ClusterPolicyReport{
@@ -72,79 +74,46 @@ func buildPolicyReports(auditWarn bool, engineResponses ...engineapi.EngineRespo
 
 // buildPolicyResults returns a string-PolicyReportResult map
 // the key of the map is one of "clusterpolicyreport", "policyreport-ns-<namespace>"
-func buildPolicyResults(auditWarn bool, engineResponses ...engineapi.EngineResponse) map[string][]policyreportv1alpha2.PolicyReportResult {
+func buildPolicyResults(infos []common.Info) map[string][]policyreportv1alpha2.PolicyReportResult {
 	results := make(map[string][]policyreportv1alpha2.PolicyReportResult)
 	now := metav1.Timestamp{Seconds: time.Now().Unix()}
 
-	for _, engineResponse := range engineResponses {
-		var ns, policyName string
-		var ann map[string]string
-
-		isVAP := engineResponse.IsValidatingAdmissionPolicy()
-
-		if isVAP {
-			validatingAdmissionPolicy := engineResponse.ValidatingAdmissionPolicy()
-			ns = validatingAdmissionPolicy.GetNamespace()
-			policyName = validatingAdmissionPolicy.GetName()
-			ann = validatingAdmissionPolicy.GetAnnotations()
-		} else {
-			kyvernoPolicy := engineResponse.Policy()
-			ns = kyvernoPolicy.GetNamespace()
-			policyName = kyvernoPolicy.GetName()
-			ann = kyvernoPolicy.GetAnnotations()
-		}
-
+	for _, info := range infos {
 		var appname string
+		ns := info.Namespace
 		if ns != "" {
 			appname = fmt.Sprintf("policyreport-ns-%s", ns)
 		} else {
 			appname = clusterpolicyreport
 		}
 
-		for _, ruleResponse := range engineResponse.PolicyResponse.Rules {
-			if ruleResponse.RuleType() != engineapi.Validation {
-				continue
-			}
-
-			result := policyreportv1alpha2.PolicyReportResult{
-				Policy: policyName,
-				Resources: []corev1.ObjectReference{
-					{
-						Kind:       engineResponse.Resource.GetKind(),
-						Namespace:  engineResponse.Resource.GetNamespace(),
-						APIVersion: engineResponse.Resource.GetAPIVersion(),
-						Name:       engineResponse.Resource.GetName(),
-						UID:        engineResponse.Resource.GetUID(),
-					},
-				},
-				Scored: true,
-			}
-
-			if ruleResponse.Status() == engineapi.RuleStatusSkip {
-				result.Result = policyreportv1alpha2.StatusSkip
-			} else if ruleResponse.Status() == engineapi.RuleStatusError {
-				result.Result = policyreportv1alpha2.StatusError
-			} else if ruleResponse.Status() == engineapi.RuleStatusPass {
-				result.Result = policyreportv1alpha2.StatusPass
-			} else if ruleResponse.Status() == engineapi.RuleStatusFail {
-				if scored, ok := ann[kyvernov1.AnnotationPolicyScored]; ok && scored == "false" {
-					result.Result = policyreportv1alpha2.StatusWarn
-				} else if auditWarn && engineResponse.GetValidationFailureAction().Audit() {
-					result.Result = policyreportv1alpha2.StatusWarn
-				} else {
-					result.Result = policyreportv1alpha2.StatusFail
+		for _, infoResult := range info.Results {
+			for _, rule := range infoResult.Rules {
+				if rule.Type != string(engineapi.Validation) {
+					continue
 				}
-			} else {
-				fmt.Println(ruleResponse)
-			}
 
-			if !isVAP {
-				result.Rule = ruleResponse.Name()
+				result := policyreportv1alpha2.PolicyReportResult{
+					Policy: info.PolicyName,
+					Resources: []corev1.ObjectReference{
+						{
+							Kind:       infoResult.Resource.Kind,
+							Namespace:  infoResult.Resource.Namespace,
+							APIVersion: infoResult.Resource.APIVersion,
+							Name:       infoResult.Resource.Name,
+							UID:        types.UID(infoResult.Resource.UID),
+						},
+					},
+					Scored: true,
+				}
+
+				result.Rule = rule.Name
+				result.Message = rule.Message
+				result.Result = policyreportv1alpha2.PolicyResult(rule.Status)
+				result.Source = kyvernov1.ValueKyvernoApp
+				result.Timestamp = now
+				results[appname] = append(results[appname], result)
 			}
-			result.Message = ruleResponse.Message()
-			result.Source = kyvernov1.ValueKyvernoApp
-			result.Timestamp = now
-			results[appname] = append(results[appname], result)
 		}
 	}
 

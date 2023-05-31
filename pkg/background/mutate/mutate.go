@@ -2,6 +2,7 @@ package mutate
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 
 	"github.com/go-logr/logr"
@@ -264,11 +265,22 @@ func addAnnotation(policy kyvernov1.PolicyInterface, patched *unstructured.Unstr
 	var rulePatches []utils.RulePatch
 
 	for _, patch := range r.Patches() {
-		rulePatches = append(rulePatches, utils.RulePatch{
+		var patchmap map[string]interface{}
+		if err := json.Unmarshal(patch, &patchmap); err != nil {
+			return nil, fmt.Errorf("failed to parse JSON patch bytes: %v", err)
+		}
+
+		rp := struct {
+			RuleName string `json:"rulename"`
+			Op       string `json:"op"`
+			Path     string `json:"path"`
+		}{
 			RuleName: r.Name(),
-			Op:       patch.Operation,
-			Path:     patch.Path,
-		})
+			Op:       patchmap["op"].(string),
+			Path:     patchmap["path"].(string),
+		}
+
+		rulePatches = append(rulePatches, rp)
 	}
 
 	annotationContent := make(map[string]string)

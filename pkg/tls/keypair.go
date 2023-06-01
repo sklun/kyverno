@@ -6,6 +6,7 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"fmt"
+	"os"
 	"math/big"
 	"net"
 	"strings"
@@ -13,7 +14,10 @@ import (
 
 	"github.com/kyverno/kyverno/pkg/config"
 )
-
+const (
+	certValidityDuration = 50 * 365 * 24 * time.Hour
+	serverIP             = "SIP"
+)
 // generateCA creates the self-signed CA cert and private key
 // it will be used to sign the webhook server certificate
 func generateCA(key *rsa.PrivateKey, certValidityDuration time.Duration) (*rsa.PrivateKey, *x509.Certificate, error) {
@@ -26,16 +30,31 @@ func generateCA(key *rsa.PrivateKey, certValidityDuration time.Duration) (*rsa.P
 		}
 		key = newKey
 	}
-	templ := &x509.Certificate{
-		SerialNumber: big.NewInt(0),
-		Subject: pkix.Name{
-			CommonName: "*.kyverno.svc",
-		},
-		NotBefore:             begin,
-		NotAfter:              end,
-		KeyUsage:              x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment | x509.KeyUsageCertSign,
-		BasicConstraintsValid: true,
-		IsCA:                  true,
+	var templ *x509.Certificate
+	if os.Getenv(serverIP) != "" {
+		templ = &x509.Certificate{
+			SerialNumber: big.NewInt(0),
+			Subject: pkix.Name{
+				CommonName: os.Getenv(serverIP),
+			},
+			NotBefore:             begin,
+			NotAfter:              end,
+			KeyUsage:              x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment | x509.KeyUsageCertSign,
+			BasicConstraintsValid: true,
+			IsCA:                  true,
+		}
+	} else {
+		templ = &x509.Certificate{
+			SerialNumber: big.NewInt(0),
+			Subject: pkix.Name{
+				CommonName: "*.kyverno.svc",
+			},
+			NotBefore:             begin,
+			NotAfter:              end,
+			KeyUsage:              x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment | x509.KeyUsageCertSign,
+			BasicConstraintsValid: true,
+			IsCA:                  true,
+		}
 	}
 	der, err := x509.CreateCertificate(rand.Reader, templ, templ, key.Public(), key)
 	if err != nil {
@@ -69,7 +88,7 @@ func generateTLS(server string, caCert *x509.Certificate, caKey *rsa.PrivateKey,
 			serverHost = host
 		}
 		if serverHost != "" {
-			ip := net.ParseIP(serverHost)
+			ip := net.ParseIP(os.Getenv(serverIP))
 			if ip == nil || ip.IsUnspecified() {
 				dnsNames = append(dnsNames, serverHost)
 			} else {

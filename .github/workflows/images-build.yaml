@@ -1,9 +1,10 @@
 name: Build images
 
 on:
-  push:
-    branches:
-      - '*'
+  workflow_dispatch:
+#   push:
+#     branches:
+#       - '*'
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
